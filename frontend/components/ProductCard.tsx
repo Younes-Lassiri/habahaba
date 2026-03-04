@@ -9,18 +9,20 @@ import {
     Text,
     TouchableOpacity,
     View,
+    Alert,
 } from 'react-native';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '@/app/redux/store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import Toast from 'react-native-toast-message';
-import { useFocusEffect } from '@react-navigation/native'; // 👈 new import
+import { useFocusEffect } from '@react-navigation/native';
+import { addItem, updateItemQuantity } from '@/app/redux/slices/orderSlice';
 
 interface ProductCardProps {
     product: Product;
     onPress: (id: number) => void;
-    onAddToCart: (product: Product) => void;
+    onAddToCart?: (product: Product) => void; // kept for backward compatibility (not used)
     onUpdateQuantity: (id: number, quantity: number) => void;
     onToggleFavorite?: (product: Product, isFavorite: boolean) => void;
     restaurantIsOpen: boolean;
@@ -38,18 +40,39 @@ const ProductCard = memo<ProductCardProps>(({
     userLanguage = 'english',
     isFavorite: externalIsFavorite,
 }) => {
+    const dispatch = useDispatch();
     const isRTL = userLanguage === 'arabic';
     
-    // Use external prop if provided, otherwise internal state
+    // Get restaurant name from home slice
+    const { restaurant_name } = useSelector((state: RootState) => state.home);
+    
+    // Cart data
+    const cartItems = useSelector((state: RootState) => state.orders.items);
+    const cartItem = cartItems.find(item => item.id === product.id);
+    const quantityInCart = cartItem?.quantity || 0;
+
+    // Favorite state
     const [internalIsFavorite, setInternalIsFavorite] = useState(false);
     const isFavorite = externalIsFavorite !== undefined ? externalIsFavorite : internalIsFavorite;
 
-    const cartItem = useSelector((state: RootState) => 
-        state.orders.items.find(item => item.id === product.id)
-    );
-    const quantityInCart = cartItem?.quantity || 0;
+    // Price calculation (same as PopularProductCard)
+    let displayPrice: number;
+    let displayOldPrice: number | undefined;
+    let showDiscount: boolean;
 
-    // ---- Favorite check (internal mode only) ----
+    if (product.promo && product.promoValue) {
+        const original = product.price || 0;
+        const discountAmount = original * (product.promoValue / 100);
+        displayPrice = Math.max(original - discountAmount, 0);
+        displayOldPrice = original;
+        showDiscount = true;
+    } else {
+        displayPrice = product.final_price || product.price;
+        displayOldPrice = product.original_price;
+        showDiscount = product.discount_applied ?? false;
+    }
+
+    // Favorite check (internal mode only)
     const checkFavoriteStatus = useCallback(async () => {
         try {
             const userData = await AsyncStorage.getItem('client');
@@ -71,14 +94,12 @@ const ProductCard = memo<ProductCardProps>(({
         }
     }, [product.id]);
 
-    // Initial check (only if no external control)
     useEffect(() => {
         if (externalIsFavorite === undefined) {
             checkFavoriteStatus();
         }
     }, [externalIsFavorite]);
 
-    // Re‑check when screen comes into focus (internal mode only)
     useFocusEffect(
         useCallback(() => {
             if (externalIsFavorite === undefined) {
@@ -86,7 +107,80 @@ const ProductCard = memo<ProductCardProps>(({
             }
         }, [externalIsFavorite, checkFavoriteStatus])
     );
-    // ---------------------------------------------
+
+    // Add to cart handler (direct Redux dispatch)
+    const handleAddToCart = (e: any) => {
+        e.stopPropagation();
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+        if (!restaurantIsOpen) {
+            Alert.alert(
+                "Restaurant Closed",
+                "We're currently closed. Please check back during operating hours.",
+                [{ text: "OK" }]
+            );
+            return;
+        }
+
+        const finalPrice = displayPrice;
+        const existingItem = cartItems.find(item => item.id === product.id);
+
+        if (existingItem) {
+            dispatch(updateItemQuantity({
+                id: product.id,
+                quantity: existingItem.quantity + 1
+            }));
+        } else {
+            dispatch(addItem({
+                id: product.id,
+                name: product.name,
+                description: product.description || '',
+                price: finalPrice,
+                quantity: 1,
+                image: product.image || '',
+                restaurant: restaurant_name || '',
+                discount_applied: showDiscount,
+                original_price: displayOldPrice || product.price,
+                offer_info: product.offer_info,
+                specialInstructions: '',
+                showSpecialInstructions: false,
+            }));
+        }
+
+        Toast.show({
+            type: 'success',
+            text1: existingItem ? 'Cart updated' : 'Added to cart',
+            text2: `${product.name} has been ${existingItem ? 'updated' : 'added'}!`,
+            position: 'top',
+            visibilityTime: 2000,
+        });
+    };
+
+    const handleIncreaseQuantity = (e: any) => {
+        e.stopPropagation();
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        if (onUpdateQuantity) {
+            onUpdateQuantity(product.id, quantityInCart + 1);
+        }
+    };
+
+    const handleDecreaseQuantity = (e: any) => {
+        e.stopPropagation();
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        if (onUpdateQuantity) {
+            if (quantityInCart > 1) {
+                onUpdateQuantity(product.id, quantityInCart - 1);
+            } else {
+                onUpdateQuantity(product.id, 0);
+            }
+        }
+    };
+
+    const handleFavoritePress = (e: any) => {
+        e.stopPropagation();
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        toggleFavorite();
+    };
 
     const toggleFavorite = async () => {
         try {
@@ -141,38 +235,6 @@ const ProductCard = memo<ProductCardProps>(({
                 visibilityTime: 2000,
             });
         }
-    };
-
-    const handleAddToCart = (e: any) => {
-        e.stopPropagation();
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        onAddToCart(product);
-    };
-
-    const handleIncreaseQuantity = (e: any) => {
-        e.stopPropagation();
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        if (onUpdateQuantity) {
-            onUpdateQuantity(product.id, quantityInCart + 1);
-        }
-    };
-
-    const handleDecreaseQuantity = (e: any) => {
-        e.stopPropagation();
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        if (onUpdateQuantity) {
-            if (quantityInCart > 1) {
-                onUpdateQuantity(product.id, quantityInCart - 1);
-            } else {
-                onUpdateQuantity(product.id, 0);
-            }
-        }
-    };
-
-    const handleFavoritePress = (e: any) => {
-        e.stopPropagation();
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        toggleFavorite();
     };
 
     const getImageUrl = () => {
@@ -245,9 +307,14 @@ const ProductCard = memo<ProductCardProps>(({
                         {product.name}
                     </Text>
                     <Text style={styles.priceText}>
-                        {Math.round(product.final_price || product.price)} <Text style={styles.currency}>MAD</Text>
+                        {Math.round(displayPrice)} <Text style={styles.currency}>MAD</Text>
                     </Text>
                 </View>
+                {showDiscount && displayOldPrice && (
+                    <Text style={[styles.oldPrice, { textAlign: isRTL ? 'left' : 'right' }]}>
+                        {Math.round(displayOldPrice)} MAD
+                    </Text>
+                )}
                 <Text style={[styles.description, { textAlign: isRTL ? 'left' : 'right' }]} numberOfLines={2}>
                     {product.description || 'Delicious food prepared fresh for you.'}
                 </Text>
@@ -263,8 +330,6 @@ const ProductCard = memo<ProductCardProps>(({
     );
 });
 
-
-// Styles remain unchanged
 const styles = StyleSheet.create({
     card: {
         backgroundColor: '#FFF',
@@ -375,6 +440,12 @@ const styles = StyleSheet.create({
         marginRight: 8,
     },
     currency: { fontSize: 12, fontWeight: '600' },
+    oldPrice: {
+        fontSize: 12,
+        color: '#9CA3AF',
+        textDecorationLine: 'line-through',
+        marginBottom: 4,
+    },
     description: { 
         fontSize: 14, 
         color: '#7F8C8D', 

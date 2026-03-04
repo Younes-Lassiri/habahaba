@@ -84,6 +84,16 @@ export const initDB = async () => {
       );
     `);
 
+     // Fix email column to allow Google login (no phone required)
+    try {
+      await connection.query(`
+        ALTER TABLE clients
+        MODIFY email VARCHAR(100) UNIQUE NULL;
+      `);
+      console.log('✅ email column updated to NULL');
+    } catch (error) {
+      console.log('Note: email column may already allow NULL');
+    }
     
     try {
       // Separate statements

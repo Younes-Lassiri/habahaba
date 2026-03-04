@@ -80,6 +80,10 @@ export default function CartScreen() {
     fetchInCartProducts();
   }, []);
 
+
+  useEffect(() => {
+    console.log('check cart items', cartItems)
+  },[cartItems])
   const fetchUserLanguage = async () => {
     try {
       const language = await AsyncStorage.getItem('userLanguage');
@@ -1087,11 +1091,13 @@ export default function CartScreen() {
               )}
 
               <View style={[styles.itemFooter, isRTL && styles.itemFooterAr]}>
-                {item.discount_applied && item.original_price ? (
+                {item.original_price ? (
                   <View style={[styles.priceContainer, isRTL && styles.priceContainerAr]}>
-                    <Text style={[styles.originalPrice, isRTL && styles.originalPriceAr]}>
-                      {(Number(item.original_price) * Number(item.quantity)).toFixed(2)} {isRTL ? 'درهم' : 'MAD'}
-                    </Text>
+                    {item.original_price !== item.price && (
+                      <Text style={[styles.originalPrice, isRTL && styles.originalPriceAr]}>
+                        {(Number(item.original_price) * Number(item.quantity)).toFixed(2)} {isRTL ? 'درهم' : 'MAD'}
+                      </Text>
+                    )}
                     <Text style={[styles.itemPrice, isRTL && styles.itemPriceAr]}>
                       {(Number(item.price) * Number(item.quantity)).toFixed(2)} {isRTL ? 'درهم' : 'MAD'}
                     </Text>

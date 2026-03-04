@@ -12,46 +12,34 @@ import {
   Platform,
   ScrollView,
   StatusBar,
-  Dimensions,
 } from 'react-native';
 import axios from 'axios';
 import { useRouter } from "expo-router";
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const { width, height } = Dimensions.get('window');
-
-// ── Palette (aligned with signup redesign) ────────────────────────────────
-const COLORS = {
-  primaryGold: '#C5A065',
-  primaryGoldDark: '#9C7C3A',
-  primaryGoldLight: '#E8C98A',
-  lightGold: '#F9F5EB',
-  cream: '#FAF7F2',
-  creamDark: '#F2EBD9',
-  white: '#FFFFFF',
-  darkBrown: '#2C1810',
-  deepBrown: '#3D2B1F',
-  warmBrown: '#6B4C35',
-  darkText: '#1F2937',
-  mediumText: '#6B7280',
-  lightText: '#9CA3AF',
-  inputBorder: '#E8DDD0',
-  inputBg: '#FAF8F4',
-  inputFocus: '#C5A065',
-  error: '#C0392B',
-  errorBg: '#FDF0EE',
-  gradientStart: '#E5C585',
-  gradientEnd: '#C5A065',
-  divider: '#EDE4D8',
-  ornamentGold: '#D4AA70',
-  infoGold: '#FEF3E2',
+const C = {
+  bg:            '#FFFFFF',
+  white:         '#FFFFFF',
+  brand:         '#93522B',
+  card:          '#F6F5F2',
+  text:          '#1A1A1A',
+  textSecondary: '#5E5E5E',
+  textMuted:     '#9A9A9A',
+  border:        '#E5E5E5',
+  error:         '#FF3B30',
+  errorBg:       '#FFF5F5',
+  infoBg:        '#FDF6EF',
+  infoBorder:    '#F0DCC8',
 };
 
 const ForgotPasswordScreen = () => {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [loading, setLoading] = useState(false);
+  const insets = useSafeAreaInsets();
+  const [email, setEmail]               = useState('');
+  const [loading, setLoading]           = useState(false);
   const [resetOnProcess, setResetOnProcess] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
 
@@ -63,7 +51,10 @@ const ForgotPasswordScreen = () => {
     }
     setLoading(true);
     try {
-      const response = await axios.post('https://haba-haba-api.ubua.cloud/api/auth/forgot-password', { email });
+      const response = await axios.post(
+        'https://haba-haba-api.ubua.cloud/api/auth/forgot-password',
+        { email }
+      );
       setLoading(false);
       if (response.data.success) {
         if (response.data.resetOnProcess) {
@@ -71,7 +62,7 @@ const ForgotPasswordScreen = () => {
         } else {
           router.push({
             pathname: "/checkYourEmail",
-            params: { email: response.data.email }
+            params: { email: response.data.email },
           });
         }
       } else {
@@ -85,684 +76,390 @@ const ForgotPasswordScreen = () => {
   };
 
   const handleGoToCheckEmail = () => {
-    router.push({
-      pathname: "/checkYourEmail",
-      params: { email }
-    });
+    router.push({ pathname: "/checkYourEmail", params: { email } });
   };
   // ─────────────────────────────────────────────────────────────────────────
 
-  // ── Step Indicator (UI-only, visual guide) ────────────────────────────────
-  const StepIndicator = () => (
-    <View style={styles.stepRow}>
-      {/* Step 1 — active */}
-      <View style={styles.stepItem}>
-        <View style={[styles.stepDot, styles.stepDotActive]}>
-          <Text style={styles.stepDotText}>1</Text>
-        </View>
-        <Text style={[styles.stepLabel, styles.stepLabelActive]}>Request</Text>
-      </View>
-
-      <View style={styles.stepConnector} />
-
-      {/* Step 2 — inactive */}
-      <View style={styles.stepItem}>
-        <View style={styles.stepDot}>
-          <Text style={styles.stepDotTextInactive}>2</Text>
-        </View>
-        <Text style={styles.stepLabel}>Verify</Text>
-      </View>
-
-      <View style={styles.stepConnector} />
-
-      {/* Step 3 — inactive */}
-      <View style={styles.stepItem}>
-        <View style={styles.stepDot}>
-          <Text style={styles.stepDotTextInactive}>3</Text>
-        </View>
-        <Text style={styles.stepLabel}>Reset</Text>
-      </View>
-    </View>
-  );
-
-  // ── Decorative Header ─────────────────────────────────────────────────────
-  const DecorativeHeader = () => (
-    <View style={styles.decorativeHeader}>
-      <LinearGradient
-        colors={['#2C1810', '#3D2B1F', '#6B4C35']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.headerGradient}
-      >
-        {/* Background circles */}
-        <View style={styles.circleTopRight} />
-        <View style={styles.circleBottomLeft} />
-        <View style={styles.circleSmall} />
-
-        {/* Back button */}
-        <TouchableOpacity
-          style={styles.backButtonHeader}
-          onPress={() => router.push("/signin")}
-          activeOpacity={0.8}
-        >
-          <View style={styles.backButtonInner}>
-            <Ionicons name="arrow-back" size={20} color={COLORS.white} />
-          </View>
-        </TouchableOpacity>
-
-        {/* Lock icon */}
-        <View style={styles.lockIconWrapper}>
-          <LinearGradient
-            colors={['rgba(229,197,133,0.25)', 'rgba(197,160,101,0.15)']}
-            style={styles.lockIconBg}
-          >
-            <View style={styles.lockIconInner}>
-              <MaterialIcons name="lock-outline" size={36} color={COLORS.primaryGoldLight} />
-            </View>
-          </LinearGradient>
-        </View>
-
-        {/* Title content */}
-        <View style={styles.headerContent}>
-          <View style={styles.ornamentRow}>
-            <View style={styles.ornamentLine} />
-            <View style={styles.ornamentDiamond} />
-            <View style={styles.ornamentLine} />
-          </View>
-          <Text style={styles.headerTitle}>Forgot Password?</Text>
-          <Text style={styles.headerSubtitle}>
-            No worries — we'll send you{'\n'}reset instructions right away
-          </Text>
-        </View>
-      </LinearGradient>
-
-      {/* Curved bottom transition */}
-      <View style={styles.headerCurve} />
-    </View>
-  );
-
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.deepBrown} />
-      <View style={styles.background}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    <SafeAreaView style={s.safe}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+
+      {/* ── Back arrow — outside scroll, always pinned at top ── */}
+      <Animated.View
+        entering={FadeInDown.delay(40).springify()}
+        style={[s.topNav, { paddingTop: Math.max(insets.top, 12) }]}
+      >
+        <TouchableOpacity
+          style={s.backBtn}
+          onPress={() => router.push("/signin")}
+          activeOpacity={0.7}
         >
-          <ScrollView
-            contentContainerStyle={styles.scrollContainer}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
+          <Ionicons name="arrow-back" size={22} color={C.text} />
+        </TouchableOpacity>
+      </Animated.View>
 
-            {/* ── Decorative Header ── */}
-            <DecorativeHeader />
+      {/* ── Everything else is centered ── */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <ScrollView
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
 
-            {/* ── Main Card ── */}
-            <View style={styles.card}>
+          {/* ── Headline ── */}
+          <Animated.View entering={FadeInDown.delay(90).springify()} style={s.headline}>
+            <Text style={s.headlineTitle}>Forgot Password?</Text>
+            <Text style={s.headlineSub}>
+              No worries — enter your email and we'll send you reset instructions
+            </Text>
+          </Animated.View>
 
-              {/* Step indicator */}
-              <StepIndicator />
+          {/* ── Lock Icon Circle ── */}
+          <Animated.View entering={FadeInDown.delay(140).springify()} style={s.iconWrap}>
+            <View style={s.iconCircle}>
+              <Ionicons name="lock-closed-outline" size={32} color={C.brand} />
+            </View>
+          </Animated.View>
 
-              {/* Divider */}
-              <View style={styles.divider} />
+          {/* ── Form ── */}
+          <Animated.View entering={FadeInDown.delay(190).springify()} style={s.form}>
 
-              {/* Section label */}
-              <View style={styles.sectionLabelRow}>
-                <View style={styles.sectionAccent} />
-                <Text style={styles.sectionLabel}>Enter Your Email</Text>
-              </View>
-
-              {/* ── Email Input ── */}
-              <View style={styles.inputGroup}>
-                <View style={styles.labelRow}>
-                  <MaterialIcons name="email" size={14} color={COLORS.primaryGold} />
-                  <Text style={styles.label}> Email Address</Text>
+            {/* Step indicator */}
+            <View style={s.stepRow}>
+              <View style={s.stepItem}>
+                <View style={[s.stepDot, s.stepDotActive]}>
+                  <Text style={s.stepNumActive}>1</Text>
                 </View>
-                <View style={[
-                  styles.inputContainer,
-                  emailFocused && styles.inputContainerFocused,
-                ]}>
-                  <View style={styles.inputIconLeft}>
-                    <MaterialIcons
-                      name="alternate-email"
-                      size={16}
-                      color={emailFocused ? COLORS.primaryGold : COLORS.lightText}
-                    />
-                  </View>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="your@email.com"
-                    placeholderTextColor={COLORS.lightText}
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    editable={!loading}
-                    onFocus={() => setEmailFocused(true)}
-                    onBlur={() => setEmailFocused(false)}
-                  />
-                </View>
-
-                {/* Helper hint */}
-                <Text style={styles.inputHint}>
-                  We'll send a secure link to this address
-                </Text>
+                <Text style={[s.stepLabel, s.stepLabelActive]}>Request</Text>
               </View>
-
-              {/* ── Submit Button ── */}
-              <TouchableOpacity
-                style={[styles.button, loading && styles.buttonDisabled]}
-                onPress={handleForgotPassword}
-                disabled={loading}
-                activeOpacity={0.85}
-              >
-                <LinearGradient
-                  colors={[COLORS.gradientStart, COLORS.gradientEnd, COLORS.primaryGoldDark]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.gradientButton}
-                >
-                  {loading ? (
-                    <ActivityIndicator color={COLORS.white} size="small" />
-                  ) : (
-                    <>
-                      <Text style={styles.buttonText}>Send Reset Link</Text>
-                      <View style={styles.btnArrow}>
-                        <MaterialIcons name="arrow-forward" size={17} color={COLORS.primaryGold} />
-                      </View>
-                    </>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
-
-              {/* ── Reset On Process Banner ── */}
-              {resetOnProcess && (
-                <TouchableOpacity
-                  style={styles.infoBox}
-                  onPress={handleGoToCheckEmail}
-                  activeOpacity={0.75}
-                >
-                  <View style={styles.infoBadge}>
-                    <Ionicons name="mail" size={18} color={COLORS.white} />
-                  </View>
-                  <View style={styles.infoContent}>
-                    <Text style={styles.infoTitle}>Reset Already Sent</Text>
-                    <Text style={styles.infoText}>Check your inbox for the reset code</Text>
-                  </View>
-                  <View style={styles.infoChevron}>
-                    <Ionicons name="chevron-forward" size={18} color={COLORS.primaryGold} />
-                  </View>
-                </TouchableOpacity>
-              )}
+              <View style={s.stepLine} />
+              <View style={s.stepItem}>
+                <View style={s.stepDot}>
+                  <Text style={s.stepNum}>2</Text>
+                </View>
+                <Text style={s.stepLabel}>Verify</Text>
+              </View>
+              <View style={s.stepLine} />
+              <View style={s.stepItem}>
+                <View style={s.stepDot}>
+                  <Text style={s.stepNum}>3</Text>
+                </View>
+                <Text style={s.stepLabel}>Reset</Text>
+              </View>
             </View>
 
-            {/* ── Footer: Back to Sign In ── */}
-            <View style={styles.footerContainer}>
-              <View style={styles.footerDividerRow}>
-                <View style={styles.footerDivLine} />
-                <Text style={styles.footerDivText}>or</Text>
-                <View style={styles.footerDivLine} />
+            {/* Email field */}
+            <View style={s.field}>
+              <Text style={s.label}>Email Address</Text>
+              <View style={[s.inputBox, emailFocused && s.inputBoxFocused]}>
+                <Ionicons
+                  name="mail-outline"
+                  size={17}
+                  color={emailFocused ? C.brand : C.textMuted}
+                  style={s.inputIcon}
+                />
+                <TextInput
+                  style={s.input}
+                  placeholder="your@email.com"
+                  placeholderTextColor={C.textMuted}
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!loading}
+                  onFocus={() => { setEmailFocused(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  onBlur={() => setEmailFocused(false)}
+                />
               </View>
+              <Text style={s.hint}>We'll send a secure link to this address</Text>
+            </View>
+
+            {/* CTA */}
+            <TouchableOpacity
+              style={[s.ctaBtn, loading && s.ctaBtnDisabled]}
+              onPress={handleForgotPassword}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
+              {loading
+                ? <ActivityIndicator color={C.white} size="small" />
+                : <Text style={s.ctaText}>Send Reset Link</Text>
+              }
+            </TouchableOpacity>
+
+            {/* Reset already in progress banner */}
+            {resetOnProcess && (
               <TouchableOpacity
-                style={styles.backButton}
-                onPress={() => router.push("/signin")}
+                style={s.infoBox}
+                onPress={handleGoToCheckEmail}
+                activeOpacity={0.75}
+              >
+                <View style={s.infoBadge}>
+                  <Ionicons name="mail" size={18} color={C.white} />
+                </View>
+                <View style={s.infoContent}>
+                  <Text style={s.infoTitle}>Reset Already Sent</Text>
+                  <Text style={s.infoText}>Check your inbox for the reset code</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={C.brand} />
+              </TouchableOpacity>
+            )}
+
+            {/* Footer */}
+            <View style={s.footer}>
+              <Text style={s.footerText}>Remember your password? </Text>
+              <TouchableOpacity
+                onPress={() => { router.push("/signin"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
                 activeOpacity={0.7}
               >
-                <Ionicons name="arrow-back" size={16} color={COLORS.primaryGold} />
-                <Text style={styles.backText}>Back to Sign In</Text>
+                <Text style={s.footerLink}>Sign In</Text>
               </TouchableOpacity>
             </View>
 
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </View>
+          </Animated.View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
 
 export default ForgotPasswordScreen;
 
-const styles = StyleSheet.create({
-  safeArea: {
+const s = StyleSheet.create({
+  safe: {
     flex: 1,
-    backgroundColor: COLORS.deepBrown,
-  },
-  background: {
-    flex: 1,
-    backgroundColor: COLORS.cream,
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    alignItems: 'center',
-    paddingBottom: 40,
+    backgroundColor: '#FFFFFF',
   },
 
-  // ── Decorative Header ──────────────────────────────────────────────────────
-  decorativeHeader: {
-    width: '100%',
-    marginBottom: -1,
-  },
-  headerGradient: {
-    width: '100%',
-    height: height * 0.34,
-    paddingTop: Platform.OS === 'ios' ? 16 : 20,
+  // ── Back arrow — pinned at top, outside scroll ────────────────────────────
+  topNav: {
     paddingHorizontal: 24,
-    justifyContent: 'flex-end',
-    paddingBottom: 40,
-    overflow: 'hidden',
-    position: 'relative',
+    paddingBottom: 8,
   },
-  circleTopRight: {
-    position: 'absolute',
-    top: -50,
-    right: -50,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(197, 160, 101, 0.12)',
-  },
-  circleBottomLeft: {
-    position: 'absolute',
-    bottom: -40,
-    left: -60,
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  circleSmall: {
-    position: 'absolute',
-    top: 40,
-    right: 70,
-    width: 55,
-    height: 55,
-    borderRadius: 28,
-    borderWidth: 1.5,
-    borderColor: 'rgba(197, 160, 101, 0.28)',
-  },
-  backButtonHeader: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 20 : 20,
-    left: 20,
-    zIndex: 10,
-  },
-  backButtonInner: {
+  backBtn: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
-  },
-  lockIconWrapper: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 16 : 16,
-    right: 24,
-  },
-  lockIconBg: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,101,0.2)',
-  },
-  lockIconInner: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(197,160,101,0.15)',
+    backgroundColor: '#F6F5F2',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerContent: {
-    alignItems: 'flex-start',
+
+  // ── Scroll — flex:1 remaining space, content centered ─────────────────────
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingBottom: 48,
+    justifyContent: 'center',
   },
-  ornamentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
+
+  // ── Headline ──────────────────────────────────────────────────────────────
+  headline: {
+    marginBottom: 24,
   },
-  ornamentLine: {
-    height: 1,
-    width: 20,
-    backgroundColor: COLORS.ornamentGold,
-    opacity: 0.7,
-  },
-  ornamentDiamond: {
-    width: 6,
-    height: 6,
-    backgroundColor: COLORS.ornamentGold,
-    transform: [{ rotate: '45deg' }],
-    marginHorizontal: 6,
-    opacity: 0.9,
-  },
-  headerTitle: {
+  headlineTitle: {
     fontSize: 28,
-    fontWeight: '800',
-    color: COLORS.white,
-    letterSpacing: 0.3,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    letterSpacing: -0.4,
     marginBottom: 6,
   },
-  headerSubtitle: {
+  headlineSub: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.68)',
+    color: '#5E5E5E',
     lineHeight: 20,
-    letterSpacing: 0.1,
-  },
-  headerCurve: {
-    width: '100%',
-    height: 28,
-    backgroundColor: COLORS.cream,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    marginTop: -28,
   },
 
-  // ── Card ───────────────────────────────────────────────────────────────────
-  card: {
-    backgroundColor: COLORS.white,
-    borderRadius: 20,
-    marginHorizontal: 16,
-    marginTop: 8,
-    padding: 22,
-    width: width - 32,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#2C1810',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.08,
-        shadowRadius: 20,
-      },
-      android: {
-        elevation: 6,
-      },
-    }),
+  // ── Icon Circle ───────────────────────────────────────────────────────────
+  iconWrap: {
+    alignItems: 'center',
+    marginBottom: 28,
+  },
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#EDE8E0',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
-  // ── Step Indicator ─────────────────────────────────────────────────────────
+  // ── Form ──────────────────────────────────────────────────────────────────
+  form: {
+    gap: 16,
+  },
+
+  // ── Step Indicator ────────────────────────────────────────────────────────
   stepRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 18,
-    paddingHorizontal: 8,
+    marginBottom: 4,
   },
   stepItem: {
     alignItems: 'center',
+    gap: 4,
   },
   stepDot: {
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: COLORS.inputBg,
+    backgroundColor: '#F2F2F2',
     borderWidth: 1.5,
-    borderColor: COLORS.inputBorder,
+    borderColor: '#E5E5E5',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
   },
   stepDotActive: {
-    backgroundColor: COLORS.primaryGold,
-    borderColor: COLORS.primaryGold,
+    backgroundColor: '#93522B',
+    borderColor: '#93522B',
     ...Platform.select({
-      ios: {
-        shadowColor: COLORS.primaryGold,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.35,
-        shadowRadius: 6,
-      },
+      ios: { shadowColor: '#93522B', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 5 },
       android: { elevation: 3 },
     }),
   },
-  stepDotText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: COLORS.white,
-  },
-  stepDotTextInactive: {
+  stepNum: {
     fontSize: 12,
     fontWeight: '700',
-    color: COLORS.lightText,
+    color: '#9A9A9A',
+  },
+  stepNumActive: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   stepLabel: {
     fontSize: 11,
     fontWeight: '600',
-    color: COLORS.lightText,
-    letterSpacing: 0.3,
+    color: '#9A9A9A',
   },
   stepLabelActive: {
-    color: COLORS.primaryGold,
+    color: '#93522B',
   },
-  stepConnector: {
+  stepLine: {
     flex: 1,
     height: 1.5,
-    backgroundColor: COLORS.divider,
+    backgroundColor: '#E5E5E5',
     marginHorizontal: 8,
     marginBottom: 18,
   },
 
-  // ── Section ────────────────────────────────────────────────────────────────
-  divider: {
-    height: 1,
-    backgroundColor: COLORS.divider,
-    marginBottom: 16,
-  },
-  sectionLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  sectionAccent: {
-    width: 3,
-    height: 16,
-    borderRadius: 2,
-    backgroundColor: COLORS.primaryGold,
-    marginRight: 8,
-  },
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.warmBrown,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-
-  // ── Input ──────────────────────────────────────────────────────────────────
-  inputGroup: {
-    marginBottom: 22,
-  },
-  labelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
+  // ── Field ─────────────────────────────────────────────────────────────────
+  field: {
+    gap: 6,
   },
   label: {
     fontSize: 13,
     fontWeight: '600',
-    color: COLORS.darkText,
+    color: '#1A1A1A',
+    letterSpacing: 0.1,
   },
-  inputContainer: {
+  inputBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: '100%',
-    height: 50,
+    height: 52,
     borderWidth: 1.5,
-    borderColor: COLORS.inputBorder,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    backgroundColor: COLORS.inputBg,
+    borderColor: '#E5E5E5',
+    borderRadius: 13,
+    paddingHorizontal: 13,
+    backgroundColor: '#FFFFFF',
   },
-  inputContainerFocused: {
-    borderColor: COLORS.inputFocus,
-    borderWidth: 2,
-    backgroundColor: COLORS.white,
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.primaryGold,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.15,
-        shadowRadius: 6,
-      },
-    }),
+  inputBoxFocused: {
+    borderColor: '#93522B',
   },
-  inputIconLeft: {
-    marginRight: 8,
+  inputIcon: {
+    marginRight: 9,
   },
   input: {
     flex: 1,
     fontSize: 15,
-    color: COLORS.darkText,
+    color: '#1A1A1A',
     padding: 0,
   },
-  inputHint: {
+  hint: {
     fontSize: 12,
-    color: COLORS.lightText,
-    marginTop: 6,
-    marginLeft: 2,
-    letterSpacing: 0.1,
+    color: '#9A9A9A',
+    marginTop: 2,
   },
 
-  // ── Button ─────────────────────────────────────────────────────────────────
-  button: {
-    width: '100%',
+  // ── CTA ───────────────────────────────────────────────────────────────────
+  ctaBtn: {
+    height: 52,
     borderRadius: 14,
-    overflow: 'hidden',
-    marginBottom: 16,
+    backgroundColor: '#93522B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
     ...Platform.select({
-      ios: {
-        shadowColor: COLORS.primaryGoldDark,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.35,
-        shadowRadius: 10,
-      },
-      android: {
-        elevation: 5,
-      },
+      ios: { shadowColor: '#93522B', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.28, shadowRadius: 10 },
+      android: { elevation: 5 },
     }),
   },
-  buttonDisabled: {
-    opacity: 0.6,
+  ctaBtnDisabled: {
+    opacity: 0.5,
   },
-  gradientButton: {
-    paddingVertical: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  buttonText: {
-    color: COLORS.white,
+  ctaText: {
     fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-  },
-  btnArrow: {
-    marginLeft: 10,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
 
-  // ── Info Box (resetOnProcess) ──────────────────────────────────────────────
+  // ── Info Box ──────────────────────────────────────────────────────────────
   infoBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.infoGold,
-    borderRadius: 14,
+    backgroundColor: '#FDF6EF',
+    borderRadius: 13,
     borderWidth: 1.5,
-    borderColor: '#F0D9B5',
+    borderColor: '#F0DCC8',
     borderLeftWidth: 4,
-    borderLeftColor: COLORS.primaryGold,
+    borderLeftColor: '#93522B',
     padding: 14,
-    marginTop: 4,
+    gap: 12,
   },
   infoBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: COLORS.primaryGold,
-    justifyContent: 'center',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#93522B',
     alignItems: 'center',
+    justifyContent: 'center',
     flexShrink: 0,
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.primaryGold,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
-        shadowRadius: 4,
-      },
-      android: { elevation: 2 },
-    }),
   },
   infoContent: {
     flex: 1,
-    marginLeft: 12,
   },
   infoTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: COLORS.darkText,
+    color: '#1A1A1A',
     marginBottom: 2,
   },
   infoText: {
     fontSize: 12,
-    color: COLORS.mediumText,
-  },
-  infoChevron: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(197,160,101,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    color: '#5E5E5E',
   },
 
-  // ── Footer ─────────────────────────────────────────────────────────────────
-  footerContainer: {
-    marginTop: 20,
-    alignItems: 'center',
-    width: width - 32,
-  },
-  footerDividerRow: {
+  // ── Footer ────────────────────────────────────────────────────────────────
+  footer: {
     flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
-    width: '100%',
-    marginBottom: 14,
+    paddingTop: 8,
   },
-  footerDivLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: COLORS.divider,
+  footerText: {
+    fontSize: 14,
+    color: '#5E5E5E',
   },
-  footerDivText: {
-    fontSize: 12,
-    color: COLORS.lightText,
-    marginHorizontal: 12,
-    fontWeight: '500',
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    backgroundColor: 'rgba(197,160,101,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(197,160,101,0.25)',
-  },
-  backText: {
-    color: COLORS.primaryGold,
+  footerLink: {
     fontSize: 14,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    color: '#93522B',
   },
 });

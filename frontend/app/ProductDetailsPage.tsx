@@ -203,6 +203,7 @@ const BurgerOrderScreen: React.FC<ProductDetailsPageProps> = ({
       position: 'top',
       visibilityTime: 2000,
     });
+    router.push('/Cart');
   };
 
   const checkIfFavorite = async (productId: number) => {
@@ -477,14 +478,6 @@ const BurgerOrderScreen: React.FC<ProductDetailsPageProps> = ({
               </Text>
             )}
 
-            {/* ── From Our Kitchen Story Card ── */}
-            <View style={newStyles.storyCard}>
-              <Text style={newStyles.storyTitle}>From Our Kitchen</Text>
-              <Text style={newStyles.storyText}>
-                This dish is prepared with the finest ingredients and the same care we'd give to our own family. Every order is made fresh, just for you.
-              </Text>
-            </View>
-
             {/* ── Special Instructions ── */}
             <View style={newStyles.sectionBlock}>
               <Text style={newStyles.sectionLabel}>Special Instructions</Text>
@@ -501,6 +494,15 @@ const BurgerOrderScreen: React.FC<ProductDetailsPageProps> = ({
               />
               <Text style={newStyles.charCount}>{specialInstructions.length}/200</Text>
             </View>
+
+            {/* ── From Our Kitchen Story Card ── */}
+            <View style={newStyles.storyCard}>
+              <Text style={newStyles.storyTitle}>From Our Kitchen</Text>
+              <Text style={newStyles.storyText}>
+                This dish is prepared with the finest ingredients and the same care we'd give to our own family. Every order is made fresh, just for you.
+              </Text>
+            </View>
+
 
             {/* Restaurant closed banner */}
             {!restaurantIsOpen && (

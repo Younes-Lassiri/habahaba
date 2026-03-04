@@ -1,31 +1,45 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, SafeAreaView, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StatusBar,
+} from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { registerForPushNotificationsAsync } from "@/utils/notifications";
 
-const COLORS = {
-  primaryGold: '#C5A065',
-  primaryGoldDark: '#9C7C3A',
-  lightGold: '#F9F5EB',
-  white: '#FFFFFF',
-  darkText: '#1F2937',
-  mediumText: '#6B7280',
-  lightText: '#9CA3AF',
-  inputBorder: '#E5E7EB',
-  inputFocus: '#C5A065',
-  error: '#EF4444',
-  gradientStart: '#E5C585',
-  gradientEnd: '#C5A065',
-  gradientLightStart: '#F9F5EB',
-  gradientLightEnd: '#F2EBD9',
+const C = {
+  bg:            '#FFFFFF',
+  white:         '#FFFFFF',
+  brand:         '#93522B',
+  card:          '#F6F5F2',
+  text:          '#1A1A1A',
+  textSecondary: '#5E5E5E',
+  textMuted:     '#9A9A9A',
+  border:        '#E5E5E5',
+  error:         '#FF3B30',
+  errorBg:       '#FFF5F5',
+  requireBg:     '#FDF6EF',
+  requireBorder: '#F0DCC8',
 };
 
 const EnterCodeResetPassword = () => {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { email } = useLocalSearchParams();
 
   const [errors, setErrors] = useState<{
@@ -34,16 +48,17 @@ const EnterCodeResetPassword = () => {
     confirmPassword?: string;
   }>({});
 
-  const [code, setCode] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [code, setCode]                           = useState("");
+  const [password, setPassword]                   = useState("");
+  const [confirmPassword, setConfirmPassword]     = useState("");
+  const [loading, setLoading]                     = useState(false);
+  const [showPassword, setShowPassword]           = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [codeFocused, setCodeFocused] = useState(false);
-  const [passwordFocused, setPasswordFocused] = useState(false);
+  const [codeFocused, setCodeFocused]             = useState(false);
+  const [passwordFocused, setPasswordFocused]     = useState(false);
   const [confirmPasswordFocused, setConfirmPasswordFocused] = useState(false);
 
+  // ── Original logic — UNCHANGED ───────────────────────────────────────────
   const handleResetPassword = async () => {
     const newErrors: { code?: string; password?: string; confirmPassword?: string } = {};
 
@@ -51,27 +66,23 @@ const EnterCodeResetPassword = () => {
     if (!password.trim()) newErrors.password = "Password is required";
     if (!confirmPassword.trim()) newErrors.confirmPassword = "Confirm password is required";
 
-
     if (password && confirmPassword && password !== confirmPassword) {
       newErrors.confirmPassword = "Passwords do not match";
     }
 
-    // ✅ Only change: save errors and stop
     if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);   // <-- write it HERE
+      setErrors(newErrors);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
 
     setLoading(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
       const response = await axios.post(
         "https://haba-haba-api.ubua.cloud/api/auth/reset-password",
-        {
-          email,
-          code,
-          password: password.trim()
-        }
+        { email, code, password: password.trim() }
       );
 
       setLoading(false);
@@ -80,7 +91,6 @@ const EnterCodeResetPassword = () => {
         await AsyncStorage.setItem("token", response.data.token);
         await AsyncStorage.setItem("client", JSON.stringify(response.data.client));
 
-        // Use whichever ID field exists
         const clientId = response.data.client.id || response.data.client._id;
         if (clientId) {
           await registerForPushNotificationsAsync("client", clientId);
@@ -88,6 +98,7 @@ const EnterCodeResetPassword = () => {
           console.error('No client ID found in response!');
         }
 
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         router.push("/");
       } else {
         Alert.alert("Error", response.data.message || "Failed to reset password");
@@ -95,451 +106,416 @@ const EnterCodeResetPassword = () => {
     } catch (error: any) {
       setLoading(false);
       console.log(error);
-
-      if (error.response && error.response.data && error.response.data.message) {
+      if (error.response?.data?.message) {
         Alert.alert("Error", error.response.data.message);
       } else {
         Alert.alert("Error", "Something went wrong");
       }
     }
   };
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <LinearGradient
-        colors={[COLORS.gradientLightStart, COLORS.gradientLightEnd]}
-        style={styles.gradientBackground}
+    <SafeAreaView style={s.safe}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+
+      {/* ── Back arrow — pinned at top, never hidden by status bar ── */}
+      <Animated.View
+        entering={FadeInDown.delay(40).springify()}
+        style={[s.topNav, { paddingTop: Math.max(insets.top, 12) }]}
       >
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        <TouchableOpacity
+          style={s.backBtn}
+          onPress={() => router.back()}
+          activeOpacity={0.7}
         >
-          <ScrollView
-            contentContainerStyle={styles.scrollContainer}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            {/* Header Section */}
-            <View style={styles.header}>
-              <View style={styles.iconContainer}>
-                <LinearGradient
-                  colors={[COLORS.gradientStart, COLORS.gradientEnd]}
-                  style={styles.iconGradient}
-                >
-                  <MaterialIcons name="lock-reset" size={40} color={COLORS.white} />
-                </LinearGradient>
+          <Ionicons name="arrow-back" size={22} color={C.text} />
+        </TouchableOpacity>
+      </Animated.View>
+
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <ScrollView
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+
+          {/* ── Lock Icon Circle ── */}
+          <Animated.View entering={FadeInDown.delay(90).springify()} style={s.iconWrap}>
+            <View style={s.iconCircle}>
+              <Ionicons name="lock-open-outline" size={32} color={C.brand} />
+            </View>
+          </Animated.View>
+
+          {/* ── Headline ── */}
+          <Animated.View entering={FadeInDown.delay(130).springify()} style={s.headline}>
+            <Text style={s.headlineTitle}>Reset Password</Text>
+            <Text style={s.headlineSub}>
+              Enter the code sent to{' '}
+              <Text style={s.emailHighlight}>{email}</Text>
+              {' '}and choose a new password
+            </Text>
+          </Animated.View>
+
+          {/* ── Step Indicator — step 2 active ── */}
+          <Animated.View entering={FadeInDown.delay(170).springify()} style={s.stepRow}>
+            <View style={s.stepItem}>
+              <View style={[s.stepDot, s.stepDotDone]}>
+                <Ionicons name="checkmark" size={14} color={C.white} />
               </View>
-              <Text style={styles.title}>Reset Password</Text>
-              <Text style={styles.subtitle}>
-                Enter the verification code sent to{'\n'}
-                <Text style={styles.emailText}>{email}</Text>
-              </Text>
+              <Text style={[s.stepLabel, s.stepLabelDone]}>Request</Text>
+            </View>
+            <View style={[s.stepLine, s.stepLineDone]} />
+            <View style={s.stepItem}>
+              <View style={[s.stepDot, s.stepDotActive]}>
+                <Text style={s.stepNumActive}>2</Text>
+              </View>
+              <Text style={[s.stepLabel, s.stepLabelActive]}>Verify</Text>
+            </View>
+            <View style={s.stepLine} />
+            <View style={s.stepItem}>
+              <View style={s.stepDot}>
+                <Text style={s.stepNum}>3</Text>
+              </View>
+              <Text style={s.stepLabel}>Reset</Text>
+            </View>
+          </Animated.View>
+
+          {/* ── Form ── */}
+          <Animated.View entering={FadeInDown.delay(210).springify()} style={s.form}>
+
+            {/* Verification Code */}
+            <View style={s.field}>
+              <Text style={s.label}>Verification Code</Text>
+              <View style={[s.inputBox, codeFocused && s.inputBoxFocused, !!errors.code && s.inputBoxError]}>
+                <Ionicons
+                  name="key-outline"
+                  size={17}
+                  color={codeFocused ? C.brand : C.textMuted}
+                  style={s.inputIcon}
+                />
+                <TextInput
+                  style={s.input}
+                  placeholder="Enter 6-digit code"
+                  placeholderTextColor={C.textMuted}
+                  keyboardType="numeric"
+                  maxLength={6}
+                  value={code}
+                  onChangeText={(t) => { setCode(t); if (errors.code) setErrors({ ...errors, code: undefined }); }}
+                  onFocus={() => { setCodeFocused(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  onBlur={() => setCodeFocused(false)}
+                  editable={!loading}
+                />
+              </View>
+              {errors.code && <ErrorMsg message={errors.code} />}
             </View>
 
-            {/* Form Section */}
-            <View style={styles.formContainer}>
-              {/* Verification Code Input */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>
-                  <MaterialIcons name="verified-user" size={16} color={COLORS.mediumText} /> Verification Code
-                </Text>
-                <View style={[
-                  styles.inputContainer,
-                  codeFocused && styles.inputContainerFocused,
-                  errors.code && styles.inputContainerError
-                ]}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter 6-digit code"
-                    placeholderTextColor={COLORS.lightText}
-                    keyboardType="numeric"
-                    maxLength={6}
-                    value={code}
-                    onChangeText={(text) => {
-                      setCode(text);
-                      if (errors.code) setErrors({ ...errors, code: undefined });
-                    }}
-                    onFocus={() => setCodeFocused(true)}
-                    onBlur={() => setCodeFocused(false)}
-                    editable={!loading}
-                  />
-                </View>
-                {errors.code && (
-                  <View style={styles.errorContainer}>
-                    <Ionicons name="alert-circle" size={14} color={COLORS.error} />
-                    <Text style={styles.errorText}>{errors.code}</Text>
-                  </View>
-                )}
-              </View>
-
-              {/* New Password Input */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>
-                  <MaterialIcons name="lock" size={16} color={COLORS.mediumText} /> New Password
-                </Text>
-                <View style={[
-                  styles.inputContainer,
-                  passwordFocused && styles.inputContainerFocused,
-                  errors.password && styles.inputContainerError
-                ]}>
-                  <TextInput
-                    style={[styles.input, { flex: 1 }]}
-                    placeholder="Enter new password"
-                    placeholderTextColor={COLORS.lightText}
-                    secureTextEntry={!showPassword}
-                    value={password}
-                    onChangeText={(text) => {
-                      setPassword(text);
-                      if (errors.password) setErrors({ ...errors, password: undefined });
-                    }}
-                    onFocus={() => setPasswordFocused(true)}
-                    onBlur={() => setPasswordFocused(false)}
-                    editable={!loading}
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowPassword(!showPassword)}
-                    style={styles.eyeIcon}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons
-                      name={showPassword ? "eye-off" : "eye"}
-                      size={20}
-                      color={COLORS.mediumText}
-                    />
-                  </TouchableOpacity>
-                </View>
-                {errors.password && (
-                  <View style={styles.errorContainer}>
-                    <Ionicons name="alert-circle" size={14} color={COLORS.error} />
-                    <Text style={styles.errorText}>{errors.password}</Text>
-                  </View>
-                )}
-              </View>
-
-              {/* Confirm Password Input */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>
-                  <MaterialIcons name="lock" size={16} color={COLORS.mediumText} /> Confirm Password
-                </Text>
-                <View style={[
-                  styles.inputContainer,
-                  confirmPasswordFocused && styles.inputContainerFocused,
-                  errors.confirmPassword && styles.inputContainerError
-                ]}>
-                  <TextInput
-                    style={[styles.input, { flex: 1 }]}
-                    placeholder="Re-enter new password"
-                    placeholderTextColor={COLORS.lightText}
-                    secureTextEntry={!showConfirmPassword}
-                    value={confirmPassword}
-                    onChangeText={(text) => {
-                      setConfirmPassword(text);
-                      if (errors.confirmPassword) setErrors({ ...errors, confirmPassword: undefined });
-                    }}
-                    onFocus={() => setConfirmPasswordFocused(true)}
-                    onBlur={() => setConfirmPasswordFocused(false)}
-                    editable={!loading}
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                    style={styles.eyeIcon}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons
-                      name={showConfirmPassword ? "eye-off" : "eye"}
-                      size={20}
-                      color={COLORS.mediumText}
-                    />
-                  </TouchableOpacity>
-                </View>
-                {errors.confirmPassword && (
-                  <View style={styles.errorContainer}>
-                    <Ionicons name="alert-circle" size={14} color={COLORS.error} />
-                    <Text style={styles.errorText}>{errors.confirmPassword}</Text>
-                  </View>
-                )}
-              </View>
-
-              {/* Password Requirements */}
-              <View style={styles.requirementsContainer}>
-                <Text style={styles.requirementsTitle}>Password must contain:</Text>
-                <View style={styles.requirementItem}>
-                  <Ionicons
-                    name={password.length >= 8 ? "checkmark-circle" : "ellipse-outline"}
-                    size={16}
-                    color={password.length >= 8 ? COLORS.primaryGold : COLORS.lightText}
-                  />
-                  <Text style={[styles.requirementText, password.length >= 8 && styles.requirementMet]}>
-                    At least 8 characters
-                  </Text>
-                </View>
-                <View style={styles.requirementItem}>
-                  <Ionicons
-                    name={/[A-Z]/.test(password) ? "checkmark-circle" : "ellipse-outline"}
-                    size={16}
-                    color={/[A-Z]/.test(password) ? COLORS.primaryGold : COLORS.lightText}
-                  />
-                  <Text style={[styles.requirementText, /[A-Z]/.test(password) && styles.requirementMet]}>
-                    One uppercase letter
-                  </Text>
-                </View>
-                <View style={styles.requirementItem}>
-                  <Ionicons
-                    name={/\d/.test(password) ? "checkmark-circle" : "ellipse-outline"}
-                    size={16}
-                    color={/\d/.test(password) ? COLORS.primaryGold : COLORS.lightText}
-                  />
-                  <Text style={[styles.requirementText, /\d/.test(password) && styles.requirementMet]}>
-                    One number
-                  </Text>
-                </View>
-                <View style={styles.requirementItem}>
-                  <Ionicons
-                    name={/[!@#$%^&*()_+{}\[\]:;<>,.?~\-=/\\]/.test(password) ? "checkmark-circle" : "ellipse-outline"}
-                    size={16}
-                    color={/[!@#$%^&*()_+{}\[\]:;<>,.?~\-=/\\]/.test(password) ? COLORS.primaryGold : COLORS.lightText}
-                  />
-                  <Text style={[styles.requirementText, /[!@#$%^&*()_+{}\[\]:;<>,.?~\-=/\\]/.test(password) && styles.requirementMet]}>
-                    One special character
-                  </Text>
-                </View>
-              </View>
-
-              {/* Submit Button */}
-              <TouchableOpacity
-                style={[styles.button, loading && styles.buttonDisabled]}
-                onPress={handleResetPassword}
-                disabled={loading}
-                activeOpacity={0.8}
-              >
-                <LinearGradient
-                  colors={[COLORS.gradientStart, COLORS.gradientEnd]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.gradientButton}
+            {/* New Password */}
+            <View style={s.field}>
+              <Text style={s.label}>New Password</Text>
+              <View style={[s.inputBox, passwordFocused && s.inputBoxFocused, !!errors.password && s.inputBoxError]}>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={17}
+                  color={passwordFocused ? C.brand : C.textMuted}
+                  style={s.inputIcon}
+                />
+                <TextInput
+                  style={[s.input, { flex: 1 }]}
+                  placeholder="Enter new password"
+                  placeholderTextColor={C.textMuted}
+                  secureTextEntry={!showPassword}
+                  value={password}
+                  onChangeText={(t) => { setPassword(t); if (errors.password) setErrors({ ...errors, password: undefined }); }}
+                  onFocus={() => { setPasswordFocused(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  onBlur={() => setPasswordFocused(false)}
+                  editable={!loading}
+                />
+                <TouchableOpacity
+                  onPress={() => { setShowPassword(!showPassword); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  style={s.eyeBtn} activeOpacity={0.7}
                 >
-                  {loading ? (
-                    <ActivityIndicator color={COLORS.white} />
-                  ) : (
-                    <>
-                      <Text style={styles.buttonText}>Reset Password</Text>
-                      <MaterialIcons name="arrow-forward" size={20} color={COLORS.white} style={{ marginLeft: 8 }} />
-                    </>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
+                  <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={19} color={C.textMuted} />
+                </TouchableOpacity>
+              </View>
+              {errors.password && <ErrorMsg message={errors.password} />}
             </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </LinearGradient>
+
+            {/* Confirm Password */}
+            <View style={s.field}>
+              <Text style={s.label}>Confirm Password</Text>
+              <View style={[s.inputBox, confirmPasswordFocused && s.inputBoxFocused, !!errors.confirmPassword && s.inputBoxError]}>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={17}
+                  color={confirmPasswordFocused ? C.brand : C.textMuted}
+                  style={s.inputIcon}
+                />
+                <TextInput
+                  style={[s.input, { flex: 1 }]}
+                  placeholder="Re-enter new password"
+                  placeholderTextColor={C.textMuted}
+                  secureTextEntry={!showConfirmPassword}
+                  value={confirmPassword}
+                  onChangeText={(t) => { setConfirmPassword(t); if (errors.confirmPassword) setErrors({ ...errors, confirmPassword: undefined }); }}
+                  onFocus={() => { setConfirmPasswordFocused(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  onBlur={() => setConfirmPasswordFocused(false)}
+                  editable={!loading}
+                />
+                <TouchableOpacity
+                  onPress={() => { setShowConfirmPassword(!showConfirmPassword); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  style={s.eyeBtn} activeOpacity={0.7}
+                >
+                  <Ionicons name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} size={19} color={C.textMuted} />
+                </TouchableOpacity>
+              </View>
+              {errors.confirmPassword && <ErrorMsg message={errors.confirmPassword} />}
+            </View>
+
+            {/* CTA */}
+            <TouchableOpacity
+              style={[s.ctaBtn, loading && s.ctaBtnDisabled]}
+              onPress={handleResetPassword}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
+              {loading
+                ? <ActivityIndicator color={C.white} size="small" />
+                : <Text style={s.ctaText}>Reset Password</Text>
+              }
+            </TouchableOpacity>
+
+          </Animated.View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
 
+// ── Standalone error component ─────────────────────────────────────────────
+const ErrorMsg = ({ message }: { message: string }) => (
+  <View style={s.errorRow}>
+    <Ionicons name="alert-circle-outline" size={12} color="#FF3B30" />
+    <Text style={s.errorText}>{message}</Text>
+  </View>
+);
+
 export default EnterCodeResetPassword;
 
-const styles = StyleSheet.create({
-  safeArea: {
+const s = StyleSheet.create({
+  safe: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
-  gradientBackground: {
-    flex: 1,
+
+  // ── Back arrow — pinned at top ─────────────────────────────────────────────
+  topNav: {
+    paddingHorizontal: 24,
+    paddingBottom: 8,
   },
-  scrollContainer: {
-    flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingVertical: Platform.OS === 'ios' ? 40 : 32,
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F6F5F2',
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  header: {
-    alignItems: "center",
-    marginBottom: 32,
+
+  // ── Scroll — remaining space centered ─────────────────────────────────────
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingBottom: 48,
+    justifyContent: 'center',
   },
-  iconContainer: {
+
+  // ── Icon Circle ───────────────────────────────────────────────────────────
+  iconWrap: {
+    alignItems: 'center',
     marginBottom: 20,
   },
-  iconGradient: {
+  iconCircle: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    justifyContent: "center",
-    alignItems: "center",
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.primaryGold,
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.3,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
+    backgroundColor: '#EDE8E0',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    marginBottom: 8,
-    color: COLORS.darkText,
-    letterSpacing: -0.5,
+
+  // ── Headline ──────────────────────────────────────────────────────────────
+  headline: {
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  headlineTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    letterSpacing: -0.4,
+    marginBottom: 6,
     textAlign: 'center',
   },
-  subtitle: {
-    fontSize: 16,
-    color: COLORS.mediumText,
+  headlineSub: {
+    fontSize: 14,
+    color: '#5E5E5E',
+    lineHeight: 20,
     textAlign: 'center',
-    paddingHorizontal: 20,
-    lineHeight: 24,
   },
-  emailText: {
-    fontWeight: "700",
-    color: COLORS.primaryGold,
+  emailHighlight: {
+    fontWeight: '700',
+    color: '#93522B',
   },
-  formContainer: {
-    width: '100%',
-    backgroundColor: COLORS.white,
-    borderRadius: 24,
-    padding: 24,
+
+  // ── Step Indicator ────────────────────────────────────────────────────────
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 28,
+  },
+  stepItem: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  stepDot: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#F2F2F2',
+    borderWidth: 1.5,
+    borderColor: '#E5E5E5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepDotActive: {
+    backgroundColor: '#93522B',
+    borderColor: '#93522B',
     ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.1,
-        shadowRadius: 20,
-      },
-      android: {
-        elevation: 8,
-      },
+      ios: { shadowColor: '#93522B', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 5 },
+      android: { elevation: 3 },
     }),
   },
-  inputGroup: {
-    marginBottom: 20,
+  stepDotDone: {
+    backgroundColor: '#93522B',
+    borderColor: '#93522B',
+    opacity: 0.5,
+  },
+  stepNum: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#9A9A9A',
+  },
+  stepNumActive: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  stepLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#9A9A9A',
+  },
+  stepLabelActive: {
+    color: '#93522B',
+  },
+  stepLabelDone: {
+    color: '#93522B',
+    opacity: 0.5,
+  },
+  stepLine: {
+    flex: 1,
+    height: 1.5,
+    backgroundColor: '#E5E5E5',
+    marginHorizontal: 8,
+    marginBottom: 18,
+  },
+  stepLineDone: {
+    backgroundColor: '#93522B',
+    opacity: 0.4,
+  },
+
+  // ── Form ──────────────────────────────────────────────────────────────────
+  form: {
+    gap: 16,
+  },
+  field: {
+    gap: 6,
   },
   label: {
-    fontSize: 14,
-    color: COLORS.darkText,
-    marginBottom: 8,
+    fontSize: 13,
     fontWeight: '600',
+    color: '#1A1A1A',
+    letterSpacing: 0.1,
+  },
+  inputBox: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    height: 56,
+    height: 52,
     borderWidth: 1.5,
-    borderColor: COLORS.inputBorder,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    backgroundColor: COLORS.white,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
-      },
-      android: {
-        elevation: 1,
-      },
-    }),
+    borderColor: '#E5E5E5',
+    borderRadius: 13,
+    paddingHorizontal: 13,
+    backgroundColor: '#FFFFFF',
   },
-  inputContainerFocused: {
-    borderColor: COLORS.inputFocus,
-    borderWidth: 2,
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.inputFocus,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-      },
-    }),
+  inputBoxFocused: {
+    borderColor: '#93522B',
   },
-  inputContainerError: {
-    borderColor: COLORS.error,
-    borderWidth: 1.5,
+  inputBoxError: {
+    borderColor: '#FF3B30',
+    backgroundColor: '#FFF5F5',
+  },
+  inputIcon: {
+    marginRight: 9,
   },
   input: {
     flex: 1,
-    fontSize: 16,
-    color: COLORS.darkText,
+    fontSize: 15,
+    color: '#1A1A1A',
     padding: 0,
   },
-  eyeIcon: {
-    padding: 4,
-    marginLeft: 8,
+  eyeBtn: {
+    paddingLeft: 10,
   },
-  errorContainer: {
+
+  // ── Error ─────────────────────────────────────────────────────────────────
+  errorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 6,
+    gap: 4,
+    marginTop: 2,
   },
   errorText: {
-    color: COLORS.error,
-    fontSize: 13,
-    marginLeft: 4,
-    flex: 1,
-  },
-  requirementsContainer: {
-    backgroundColor: COLORS.lightGold,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#FED7AA',
-  },
-  requirementsTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.darkText,
-    marginBottom: 10,
-  },
-  requirementItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  requirementText: {
-    fontSize: 13,
-    color: COLORS.mediumText,
-    marginLeft: 8,
-  },
-  requirementMet: {
-    color: COLORS.primaryGold,
+    fontSize: 12,
+    color: '#FF3B30',
     fontWeight: '500',
   },
-  button: {
-    width: '100%',
-    borderRadius: 12,
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.primaryGold,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  gradientButton: {
-    paddingVertical: 16,
+
+  // ── CTA ───────────────────────────────────────────────────────────────────
+  ctaBtn: {
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: '#93522B',
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
+    marginTop: 4,
+    ...Platform.select({
+      ios: { shadowColor: '#93522B', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.28, shadowRadius: 10 },
+      android: { elevation: 5 },
+    }),
   },
-  buttonText: {
-    color: COLORS.white,
-    fontSize: 17,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
+  ctaBtnDisabled: {
+    opacity: 0.5,
+  },
+  ctaText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
 });

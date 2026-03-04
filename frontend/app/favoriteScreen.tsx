@@ -26,6 +26,26 @@ import { addItem, updateItemQuantity } from "./redux/slices/orderSlice";
 import { RootState } from "./redux/store";
 import { Product } from './redux/slices/homeSlice';
 
+// Helper to compute price considering promo (percentage discount)
+const getProductPrice = (product: Product) => {
+  if (product.promo && product.promoValue) {
+    const original = product.price || 0;
+    const discountAmount = original * (product.promoValue / 100);
+    const final = Math.max(original - discountAmount, 0);
+    return {
+      final,
+      original,
+      hasDiscount: true,
+    };
+  }
+  // Fallback to existing discount fields
+  return {
+    final: product.final_price || product.price,
+    original: product.original_price || product.price,
+    hasDiscount: product.discount_applied ?? false,
+  };
+};
+
 interface FavoriteScreenProps {
   setActiveTab?: (tab: string) => void;
   setSelectedProductId?: (id: number) => void;
@@ -63,6 +83,9 @@ const FavoriteCard = React.memo(({
   const isRTL = userLanguage === 'arabic';
   const isLTR = !isRTL;
 
+  // Get price info (promo-aware)
+  const { final, original, hasDiscount } = getProductPrice(product);
+
   const handleAddToCart = (e: any) => {
     e.stopPropagation();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -95,22 +118,20 @@ const FavoriteCard = React.memo(({
 
   const renderPrice = () => {
     const currency = t(userLanguage, { en: 'MAD', ar: 'د.م.', fr: 'MAD' });
-    const finalPrice = product.final_price || product.price;
-    const originalPrice = product.original_price || product.price;
 
-    if (product.discount_applied && finalPrice < originalPrice) {
+    if (hasDiscount) {
       return (
         <View style={[styles.priceContainer, isLTR && styles.priceContainerLtr]}>
           <Text style={styles.price}>
-            {Math.round(finalPrice)} <Text style={styles.currency}>{currency}</Text>
+            {Math.round(final)} <Text style={styles.currency}>{currency}</Text>
           </Text>
-          <Text style={styles.oldPrice}>{Math.round(originalPrice)} {currency}</Text>
+          <Text style={styles.oldPrice}>{Math.round(original)} {currency}</Text>
         </View>
       );
     }
     return (
       <Text style={styles.price}>
-        {Math.round(originalPrice)} <Text style={styles.currency}>{currency}</Text>
+        {Math.round(original)} <Text style={styles.currency}>{currency}</Text>
       </Text>
     );
   };
@@ -167,7 +188,7 @@ const FavoriteCard = React.memo(({
 
   return (
     <TouchableOpacity
-      style={[styles.card, product.discount_applied && styles.discountedCard]}
+      style={[styles.card, hasDiscount && styles.discountedCard]}
       activeOpacity={0.9}
       onPress={() => {
         // Optional: navigate to product details
@@ -342,21 +363,23 @@ const FavoriteScreen: React.FC<FavoriteScreenProps> = () => {
       return;
     }
 
-    const priceToUse = product.discount_applied ? product.final_price! :
-      product.original_price || product.price;
+    // Use the same helper to get the correct price and discount status
+    const { final, original, hasDiscount } = getProductPrice(product);
 
     dispatch(
       addItem({
         id: product.id,
-        name: product.name,
-        description: product.description || '',
-        price: priceToUse,
-        quantity: 1,
-        image: product.image || '',
-        restaurant: restaurantName,
-        discount_applied: product.discount_applied,
-        original_price: product.original_price || product.price,
-        offer_info: product.offer_info,
+                name: product.name,
+                description: product.description || '',
+                price: final,
+                quantity: 1,
+                image: product.image || '',
+                restaurant: restaurantName, // use from Redux
+                discount_applied: hasDiscount,
+                original_price: original,
+                offer_info: product.offer_info,
+                specialInstructions: '',
+                showSpecialInstructions: false,
       })
     );
 
@@ -387,7 +410,10 @@ const FavoriteScreen: React.FC<FavoriteScreenProps> = () => {
     />
   );
 
-  const activeDiscountCount = favorites.filter(f => f.discount_applied).length;
+  const activeDiscountCount = favorites.filter(f => {
+    const { hasDiscount } = getProductPrice(f);
+    return hasDiscount;
+  }).length;
 
   if (loadingLang || loading) {
     return (

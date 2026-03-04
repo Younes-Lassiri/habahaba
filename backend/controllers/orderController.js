@@ -329,8 +329,8 @@ WHERE id IN (${finalOffersToDeactivate.map(() => '?').join(',')})`,
             [promoCodeId]
           ),
           connection.execute(
-            `INSERT INTO order_promo_codes (order_id, promo_code_id, user_id, discount_amount) VALUES (?, ?, ?, ?)`, 
-            [order_id, promoCodeId, user_id, discount]
+            `INSERT INTO order_promo_codes (order_id, promo_code_id, discount_amount) VALUES (?, ?, ?)`, 
+            [order_id, promoCodeId, discount]
           )
         ]);
         console.log(`✅ Tracked promo code ${promoCodeId} usage for user ${user_id}.`);

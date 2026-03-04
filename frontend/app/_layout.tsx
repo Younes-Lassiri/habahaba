@@ -264,6 +264,7 @@ function AppContent() {
         <Stack.Screen name="SupportScreen" options={{ headerShown: false }} />
         <Stack.Screen name="TermsOfService" options={{ headerShown: false }} />
         <Stack.Screen name="PrivacyPolicy" options={{ headerShown: false }} />
+        <Stack.Screen name="trackMyOrders" options={{ headerShown: false }} />
       </Stack>
       <FloatingCart />
       <Toast topOffset={insets.top} visibilityTime={4000} />

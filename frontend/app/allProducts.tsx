@@ -421,7 +421,7 @@ const AllProductsPage: React.FC<AllProductsProps> = ({
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
       ) : (
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, paddingHorizontal: 10, backgroundColor: Colors.primaryLight, }}>
           {filteredProducts.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="search-outline" size={64} color={Colors.text.secondary} />

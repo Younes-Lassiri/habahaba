@@ -10,17 +10,21 @@ import {
     Text,
     TouchableOpacity,
     View,
+    Alert,
 } from 'react-native';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '@/app/redux/store';
+import { addItem, updateItemQuantity } from '@/app/redux/slices/orderSlice';
+import Toast from 'react-native-toast-message';
+import { router } from 'expo-router';
 
 interface PopularProductCardProps {
     product: Product;
     onPress: (id: number) => void;
-    onAddToCart: (product: Product) => void;
+    onAddToCart?: (product: Product) => void; // kept for backward compatibility (optional)
     onUpdateQuantity?: (id: number, quantity: number) => void;
     restaurantIsOpen: boolean;
-    userLanguage: 'english' | 'arabic' | 'french';
+    userLanguage?: 'english' | 'arabic' | 'french';
 }
 
 const PopularProductCard = memo<PopularProductCardProps>(({
@@ -31,19 +35,76 @@ const PopularProductCard = memo<PopularProductCardProps>(({
     restaurantIsOpen,
     userLanguage = 'english',
 }) => {
-    // All titles are Arabic -> Force RTL behavior for text and layout
-    const isRTL = true;
-    
-    // Check if product is in cart and get its quantity
-    const cartItem = useSelector((state: RootState) => 
-        state.orders.items.find(item => item.id === product.id)
-    );
+    const dispatch = useDispatch();
+    const cartItems = useSelector((state: RootState) => state.orders.items);
+    const cartItem = cartItems.find(item => item.id === product.id);
     const quantityInCart = cartItem?.quantity || 0;
+
+    // Get restaurant name from home slice
+    const { restaurant_name } = useSelector((state: RootState) => state.home);
+
+    // Price calculation
+    let displayPrice: number;
+    let displayOldPrice: number | undefined;
+    let showDiscount: boolean;
+
+    if (product.promo && product.promoValue) {
+        const original = product.price || 0;
+        const discountAmount = original * (product.promoValue / 100);
+        displayPrice = Math.max(original - discountAmount, 0);
+        displayOldPrice = original;
+        showDiscount = true;
+    } else {
+        displayPrice = product.final_price || product.price;
+        displayOldPrice = product.original_price;
+        showDiscount = product.discount_applied ?? false;
+    }
 
     const handleAddToCart = (e: any) => {
         e.stopPropagation();
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        onAddToCart(product);
+
+        if (!restaurantIsOpen) {
+            Alert.alert(
+                "Restaurant Closed",
+                "We're currently closed. Please check back during operating hours.",
+                [{ text: "OK" }]
+            );
+            return;
+        }
+
+        const finalPrice = displayPrice;
+        const existingItem = cartItems.find(item => item.id === product.id);
+
+        if (existingItem) {
+            dispatch(updateItemQuantity({ 
+                id: product.id, 
+                quantity: existingItem.quantity + 1 
+            }));
+        } else {
+            dispatch(addItem({
+                id: product.id,
+                name: product.name,
+                description: product.description || '',
+                price: finalPrice,
+                quantity: 1,
+                image: product.image || '',
+                restaurant: restaurant_name || '', // use from Redux
+                discount_applied: showDiscount,
+                original_price: displayOldPrice,
+                offer_info: product.offer_info,
+                specialInstructions: '',
+                showSpecialInstructions: false,
+            }));
+        }
+
+        Toast.show({
+            type: 'success',
+            text1: existingItem ? 'Cart updated' : 'Added to cart',
+            text2: `${product.name} has been ${existingItem ? 'updated' : 'added'}!`,
+            position: 'top',
+            visibilityTime: 2000,
+        });
     };
 
     const handleIncreaseQuantity = (e: any) => {
@@ -117,35 +178,29 @@ const PopularProductCard = memo<PopularProductCardProps>(({
             activeOpacity={0.9}
             onPress={() => onPress(product.id)}
         >
-            {/* Left Side: Content Area */}
             <View style={styles.contentArea}>
                 <View>
                     <Text style={styles.title} numberOfLines={1}>
                         {product.name}
                     </Text>
-
                     <Text style={styles.desc} numberOfLines={2}>
                         {product.description || 'وصف المنتج اللذيذ المحضر بعناية فائقة'}
                     </Text>
                 </View>
 
                 <View style={styles.footer}>
-                    {/* Cart Button on the Left */}
                     {renderCartButton()}
-
-                    {/* Price on the Right */}
                     <View style={styles.priceContainer}>
                         <Text style={styles.price}>
-                            {Math.round(product.final_price || product.price)} <Text style={styles.currency}>MAD</Text>
+                            {Math.round(displayPrice)} <Text style={styles.currency}>MAD</Text>
                         </Text>
-                        {product.discount_applied && (
-                            <Text style={styles.oldPrice}>{Math.round(product?.original_price ?? 0)} MAD</Text>
+                        {showDiscount && displayOldPrice && (
+                            <Text style={styles.oldPrice}>{Math.round(displayOldPrice)} MAD</Text>
                         )}
                     </View>
                 </View>
             </View>
 
-            {/* Right Side: Image Section */}
             <View style={styles.imageSection}>
                 {product.image ? (
                     <Image source={{ uri: product.image.startsWith('http') ? product.image : getImageUrl() }} style={styles.image} />
@@ -155,13 +210,11 @@ const PopularProductCard = memo<PopularProductCardProps>(({
                     </View>
                 )}
                 
-                {/* Rating Badge at Bottom Left of the image */}
                 <View style={styles.ratingBadge}>
                     <Ionicons name="star" size={10} color="#FFB800" />
                     <Text style={styles.ratingText}>{product.rating || 4.9}</Text>
                 </View>
 
-                {/* Popular Badge at Top Right of the image */}
                 <View style={styles.popularBadge}>
                     <Image 
                         source={require('@/assets/images/habahabaIcon.png')} 
@@ -225,17 +278,17 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#1F2937',
     },
-   popularBadge: {
-    position: 'absolute',
-    top: 0,
-    backgroundColor: Colors.primary,
-    right: 0,
-    padding: 2,
-    zIndex: 5,
-    borderBottomLeftRadius: 5,
+    popularBadge: {
+        position: 'absolute',
+        top: 0,
+        backgroundColor: Colors.primary,
+        right: 0,
+        padding: 2,
+        zIndex: 5,
+        borderBottomLeftRadius: 5,
     },
     popularIcon: {
-        width: 40, // Slightly larger since there's no text
+        width: 40,
         height: 40,
     },
     contentArea: {
@@ -264,13 +317,13 @@ const styles = StyleSheet.create({
         marginTop: 8,
     },
     priceContainer: {
-        alignItems: 'flex-end', // Changed from flex-start to flex-end for right alignment
+        alignItems: 'flex-end',
     },
     price: {
         fontSize: 20,
         fontWeight: '900',
         color: '#93522B',
-        textAlign: 'right', // Added for right alignment
+        textAlign: 'right',
     },
     currency: {
         fontSize: 12,
@@ -279,7 +332,7 @@ const styles = StyleSheet.create({
         fontSize: 11,
         color: '#9CA3AF',
         textDecorationLine: 'line-through',
-        textAlign: 'right', // Changed from left to right
+        textAlign: 'right',
     },
     addBtn: {
         width: 50, 
@@ -293,7 +346,7 @@ const styles = StyleSheet.create({
         borderRadius: 20,
         overflow: 'hidden',
         alignItems: 'center',
-        flexDirection: 'row', // Changed from row-reverse to row
+        flexDirection: 'row',
     },
     quantityButton: {
         width: 35,

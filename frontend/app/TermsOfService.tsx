@@ -18,7 +18,7 @@ const COLORS = {
   surface: "#FFFFFF",
   heading: "#1F2937",
   body: "#4B5563",
-  accent: "#C5A065",
+  accent: '#93522B',
   border: "#E5E7EB",
 };
 

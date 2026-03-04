@@ -4,30 +4,43 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   StyleSheet,
   SafeAreaView,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Image,
-  I18nManager,
+  StatusBar,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { MaterialIcons, Ionicons, FontAwesome5 } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams } from "expo-router";
-import Colors from '@/constants/Colors';
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 
-// Translation function
+// --- Color palette (exactly matching SignupScreen) ---
+const C = {
+  bg:            '#FFFFFF',
+  white:         '#FFFFFF',
+  brand:         '#93522B',
+  card:          '#F6F5F2',
+  text:          '#1A1A1A',
+  textSecondary: '#5E5E5E',
+  textMuted:     '#9A9A9A',
+  border:        '#E5E5E5',
+  prefixBg:      '#F2F2F2',
+  error:         '#FF3B30',
+  errorBg:       '#FFF5F5',
+  link:          '#93522B',
+  success:       '#34C759', // kept for checkmarks, but you can also use brand
+};
+
+// --- Translation helper (same logic, just embedded) ---
 const getTranslation = (userLanguage: string) => {
   const isArabic = userLanguage === 'arabic';
-  
   return {
-    // Header
     trackYourOrder: isArabic ? 'تتبع طلبك' : 'Track Your Order',
     orderNumber: isArabic ? 'رقم الطلب' : 'Order Number',
     placeholder: isArabic ? 'مثال: ORD-123456' : 'e.g., ORD-123456',
@@ -38,13 +51,9 @@ const getTranslation = (userLanguage: string) => {
     statusUpdates: isArabic ? 'تحديثات حالة الطلب' : 'Order status updates',
     driverInfo: isArabic ? 'معلومات السائق والاتصال' : 'Driver information & contact',
     estimatedTime: isArabic ? 'الوقت المتوقع للتوصيل' : 'Estimated delivery time',
-    
-    // Support
     needHelp: isArabic ? 'تحتاج مساعدة بخصوص طلبك؟' : 'Need help with your order?',
     contactSupport: isArabic ? 'تواصل مع فريق الدعم للحصول على المساعدة' : 'Contact our support team for assistance',
     getHelp: isArabic ? 'الحصول على مساعدة' : 'Get Help',
-    
-    // Error messages
     enterOrderNumber: isArabic ? 'يرجى إدخال رقم الطلب' : 'Please enter your order number',
     loginRequired: isArabic ? 'يرجى تسجيل الدخول لتتبع طلباتك' : 'Please log in to track your orders',
     orderNotFound: isArabic ? 'الطلب غير موجود' : 'Order not found',
@@ -54,16 +63,44 @@ const getTranslation = (userLanguage: string) => {
   };
 };
 
+// --- Reusable Error Message (exactly from SignupScreen) ---
+const ErrorMsg = ({ message }: { message?: string }) => {
+  if (!message) return null;
+  return (
+    <View style={s.errorRow}>
+      <Ionicons name="alert-circle-outline" size={12} color={C.error} />
+      <Text style={s.errorText}>{message}</Text>
+    </View>
+  );
+};
+
+// --- Reusable Field (exactly from SignupScreen) ---
+const Field = ({
+  label, focused, error, children,
+}: {
+  label: string; focused: boolean; error?: string; children: React.ReactNode;
+}) => (
+  <View style={s.field}>
+    <Text style={s.label}>{label}</Text>
+    <View style={[s.inputBox, focused && s.inputBoxFocused, !!error && s.inputBoxError]}>
+      {children}
+    </View>
+    <ErrorMsg message={error} />
+  </View>
+);
+
+// --- Main Component ---
 interface TrackMyOrdersProps {
   userLanguage?: 'english' | 'arabic';
 }
 
 const TrackMyOrders: React.FC<TrackMyOrdersProps> = ({ userLanguage = 'english' }) => {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams();
   const t = getTranslation(userLanguage);
   const isRTL = userLanguage === 'arabic';
-  
+
   const [orderNumber, setOrderNumber] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -72,20 +109,22 @@ const TrackMyOrders: React.FC<TrackMyOrdersProps> = ({ userLanguage = 'english' 
   const handleTrackOrder = async () => {
     if (!orderNumber.trim()) {
       setError(t.enterOrderNumber);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
 
     setLoading(true);
     setError("");
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      // Get user data from AsyncStorage
       const userData = await AsyncStorage.getItem('client');
       const user = userData ? JSON.parse(userData) : null;
 
       if (!user || !user.id) {
         setError(t.loginRequired);
         setLoading(false);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         return;
       }
 
@@ -101,486 +140,362 @@ const TrackMyOrders: React.FC<TrackMyOrdersProps> = ({ userLanguage = 'english' 
       const data = await response.json();
 
       if (!response.ok) {
-        if (response.status === 401) {
-          setError(data.message || t.orderNotFound);
-        } else if (response.status === 400) {
-          setError(data.message || t.invalidOrderNumber);
-        } else {
-          setError(t.serverError);
-        }
+        let apiError = t.serverError;
+        if (response.status === 401) apiError = data.message || t.orderNotFound;
+        else if (response.status === 400) apiError = data.message || t.invalidOrderNumber;
+        setError(apiError);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         return;
       }
 
       if (data.success) {
-        // Order exists - navigate to track order screen with the order ID from backend
-        console.log("✅ Order found, navigating to track order:", data.order_id);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         router.push(`/track-order/${data.order_id}`);
       }
-
-    } catch (err: any) {
+    } catch (err) {
       console.error('Track order error:', err);
       setError(t.networkError);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleInputChange = (text: string) => {
-    setOrderNumber(text);
+  const clearInput = () => {
+    setOrderNumber("");
     if (error) setError("");
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
-  const insets = useSafeAreaInsets();
 
   return (
-    <SafeAreaView style={[styles.safeArea, {paddingTop: insets.top}]}>
-      <LinearGradient
-        colors={[Colors.background, Colors.background]}
-        style={styles.gradientBackground}
+    <SafeAreaView style={[s.safe, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        <ScrollView
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          <ScrollView
-            contentContainerStyle={styles.scrollContainer}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            {/* Header Section - Keep centered */}
-            <View style={styles.header}>
-              <View style={styles.iconContainer}>
-                <LinearGradient
-                  colors={[Colors.primary, Colors.primary]}
-                  style={styles.iconGradient}
-                >
-                  <FontAwesome5 name="shipping-fast" size={32} color={Colors.background} />
-                </LinearGradient>
-              </View>
-              <Text style={styles.title}>{t.trackYourOrder}</Text>
-              <Text style={styles.subtitle}>
-                {isRTL ? 'أدخل رقم الطلب لتتبع حالة التوصيل في الوقت الحقيقي' : 'Enter your order number to track delivery status in real-time'}
+          {/* Back Button (same as SignupScreen) */}
+          <Animated.View entering={FadeInDown.delay(40).springify()} style={s.topNav}>
+            <TouchableOpacity
+              style={s.backBtn}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.back();
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={22} color={C.text} />
+            </TouchableOpacity>
+          </Animated.View>
+
+          {/* Headline (same as SignupScreen) */}
+          <Animated.View entering={FadeInDown.delay(90).springify()} style={s.headline}>
+            <Text style={s.headlineTitle}>{t.trackYourOrder}</Text>
+            <Text style={s.headlineSub}>
+              {isRTL ? 'أدخل رقم الطلب لتتبع حالة التوصيل في الوقت الحقيقي' : 'Enter your order number to track delivery status in real-time'}
+            </Text>
+          </Animated.View>
+
+          {/* Icon Circle (same style, with location icon) */}
+          <Animated.View entering={FadeInDown.delay(140).springify()} style={s.iconWrap}>
+            <View style={s.iconCircle}>
+              <Ionicons name="location-outline" size={40} color={C.brand} />
+            </View>
+          </Animated.View>
+
+          {/* Form Section */}
+          <Animated.View entering={FadeInDown.delay(190).springify()} style={s.form}>
+            {/* Order Number Field */}
+            <Field label={t.orderNumber} focused={inputFocused} error={error}>
+              <TextInput
+                style={[s.input, { textAlign: isRTL ? 'right' : 'left' }]}
+                placeholder={t.placeholder}
+                placeholderTextColor={C.textMuted}
+                value={orderNumber}
+                onChangeText={(text) => {
+                  setOrderNumber(text);
+                  if (error) setError("");
+                }}
+                onFocus={() => {
+                  setInputFocused(true);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+                onBlur={() => setInputFocused(false)}
+                editable={!loading}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                returnKeyType="search"
+                onSubmitEditing={handleTrackOrder}
+              />
+              {orderNumber.length > 0 && !loading && (
+                <TouchableOpacity onPress={clearInput} style={s.clearBtn} activeOpacity={0.7}>
+                  <Ionicons name="close-circle" size={18} color={C.textMuted} />
+                </TouchableOpacity>
+              )}
+            </Field>
+
+            {/* Helper text (only when no error) */}
+            {!error && (
+              <Text style={[s.helperText, { textAlign: isRTL ? 'right' : 'left' }]}>
+                {t.helperText}
               </Text>
-            </View>
+            )}
 
-            {/* Illustration Section */}
-            <View style={styles.illustrationContainer}>
-              <View style={styles.illustration}>
-                <LinearGradient
-                  colors={[Colors.background, Colors.background]}
-                  style={styles.illustrationGradient}
-                >
-                  <FontAwesome5 name="map-marker-alt" size={48} color={Colors.primary} />
-                </LinearGradient>
-                <View style={styles.truckIcon}>
-                  <FontAwesome5 name="truck" size={24} color={Colors.background} />
-                </View>
-              </View>
-            </View>
-
-            {/* Form Section */}
-            <View style={styles.formContainer}>
-              {/* Order Number Input */}
-              <View style={styles.inputGroup}>
-                <View style={[styles.label, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-                  <MaterialIcons name="confirmation-number" size={18} color={Colors.text.secondary} />
-                  <Text style={[styles.labelText, { textAlign: isRTL ? 'right' : 'left', marginLeft: isRTL ? 0 : 8, marginRight: isRTL ? 8 : 0 }]}>
-                    {t.orderNumber}
-                  </Text>
-                </View>
-                <View style={[
-                  styles.inputContainer,
-                  inputFocused && styles.inputContainerFocused,
-                  error && styles.inputContainerError,
-                  { flexDirection: isRTL ? 'row-reverse' : 'row' }
-                ]}>
-                  <TextInput
-                    style={[styles.input, { textAlign: isRTL ? 'right' : 'left', writingDirection: isRTL ? 'rtl' : 'ltr' }]}
-                    placeholder={t.placeholder}
-                    placeholderTextColor={Colors.text.secondary}
-                    value={orderNumber}
-                    onChangeText={handleInputChange}
-                    onFocus={() => setInputFocused(true)}
-                    onBlur={() => setInputFocused(false)}
-                    editable={!loading}
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                    returnKeyType="search"
-                    onSubmitEditing={handleTrackOrder}
-                  />
-                  {orderNumber && !loading && (
-                    <TouchableOpacity
-                      onPress={() => setOrderNumber("")}
-                      style={styles.clearButton}
-                    >
-                      <Ionicons name="close-circle" size={20} color={Colors.text.secondary} />
-                    </TouchableOpacity>
-                  )}
-                </View>
-                {!error && (
-                  <Text style={[styles.helperText, { textAlign: isRTL ? 'right' : 'left' }]}>
-                    {t.helperText}
-                  </Text>
-                )}
-              </View>
-
-              {/* Error Message */}
-              {error && (
-                <View style={styles.errorContainer}>
-                  <View style={[styles.errorBox, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-                    <Ionicons name="alert-circle" size={20} color={Colors.error} />
-                    <Text style={[styles.errorText, { textAlign: isRTL ? 'right' : 'left', marginLeft: isRTL ? 0 : 10, marginRight: isRTL ? 10 : 0 }]}>
-                      {error}
-                    </Text>
-                  </View>
+            {/* Track Button (same as CTA) */}
+            <TouchableOpacity
+              style={[s.ctaBtn, (loading || !orderNumber.trim()) && s.ctaBtnDisabled]}
+              onPress={handleTrackOrder}
+              disabled={loading || !orderNumber.trim()}
+              activeOpacity={0.88}
+            >
+              {loading ? (
+                <ActivityIndicator color={C.white} size="small" />
+              ) : (
+                <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center' }}>
+                  <Text style={s.ctaText}>{t.trackOrder}</Text>
+                  <Ionicons name="location" size={20} color={C.white} style={{ marginLeft: isRTL ? 0 : 8, marginRight: isRTL ? 8 : 0 }} />
                 </View>
               )}
+            </TouchableOpacity>
 
-              {/* Track Button */}
-              <TouchableOpacity
-                style={[styles.button, (loading || !orderNumber.trim()) && styles.buttonDisabled]}
-                onPress={handleTrackOrder}
-                disabled={loading || !orderNumber.trim()}
-              >
-                <LinearGradient
-                  colors={[Colors.primary, Colors.primary]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={[styles.gradientButton, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}
-                >
-                  {loading ? (
-                    <ActivityIndicator color={Colors.background} />
-                  ) : (
-                    <>
-                      <Text style={styles.buttonText}>{t.trackOrder}</Text>
-                      <Ionicons name="location" size={20} color={Colors.background} style={{ marginLeft: isRTL ? 0 : 8, marginRight: isRTL ? 8 : 0 }} />
-                    </>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
-
-              {/* Features List */}
-              <View style={styles.featuresContainer}>
-                <Text style={[styles.featuresTitle, { textAlign: isRTL ? 'right' : 'left' }]}>{t.whatYouCanTrack}</Text>
-                <View style={[styles.featureItem, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-                  <Ionicons name="checkmark-circle" size={18} color={Colors.success} />
-                  <Text style={[styles.featureText, { textAlign: isRTL ? 'right' : 'left' }]}>{t.realTimeLocation}</Text>
-                </View>
-                <View style={[styles.featureItem, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-                  <Ionicons name="checkmark-circle" size={18} color={Colors.success} />
-                  <Text style={[styles.featureText, { textAlign: isRTL ? 'right' : 'left' }]}>{t.statusUpdates}</Text>
-                </View>
-                <View style={[styles.featureItem, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-                  <Ionicons name="checkmark-circle" size={18} color={Colors.success} />
-                  <Text style={[styles.featureText, { textAlign: isRTL ? 'right' : 'left' }]}>{t.driverInfo}</Text>
-                </View>
-                <View style={[styles.featureItem, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-                  <Ionicons name="checkmark-circle" size={18} color={Colors.success} />
-                  <Text style={[styles.featureText, { textAlign: isRTL ? 'right' : 'left' }]}>{t.estimatedTime}</Text>
-                </View>
+            {/* Features List (styled like SignupScreen's terms, with checkmarks) */}
+            <View style={s.featuresContainer}>
+              <Text style={[s.featuresTitle, { textAlign: isRTL ? 'right' : 'left' }]}>{t.whatYouCanTrack}</Text>
+              <View style={[s.featureItem, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                <Ionicons name="checkmark-circle" size={18} color={C.brand} />
+                <Text style={[s.featureText, { textAlign: isRTL ? 'right' : 'left' }]}>{t.realTimeLocation}</Text>
+              </View>
+              <View style={[s.featureItem, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                <Ionicons name="checkmark-circle" size={18} color={C.brand} />
+                <Text style={[s.featureText, { textAlign: isRTL ? 'right' : 'left' }]}>{t.statusUpdates}</Text>
+              </View>
+              <View style={[s.featureItem, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                <Ionicons name="checkmark-circle" size={18} color={C.brand} />
+                <Text style={[s.featureText, { textAlign: isRTL ? 'right' : 'left' }]}>{t.driverInfo}</Text>
+              </View>
+              <View style={[s.featureItem, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                <Ionicons name="checkmark-circle" size={18} color={C.brand} />
+                <Text style={[s.featureText, { textAlign: isRTL ? 'right' : 'left' }]}>{t.estimatedTime}</Text>
               </View>
             </View>
 
-            {/* Support Info */}
-            <View style={styles.supportContainer}>
-              <View style={[styles.supportBox, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-                <Ionicons name="help-buoy" size={20} color={Colors.primary} />
-                <View style={[styles.supportText, { marginLeft: isRTL ? 0 : 12, marginRight: isRTL ? 12 : 0 }]}>
-                  <Text style={[styles.supportTitle, { textAlign: isRTL ? 'right' : 'left' }]}>{t.needHelp}</Text>
-                  <Text style={[styles.supportDescription, { textAlign: isRTL ? 'right' : 'left' }]}>
+            {/* Support Card (same card style as SignupScreen's terms area) */}
+            <View style={s.supportCard}>
+              <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center' }}>
+                <Ionicons name="help-buoy" size={20} color={C.brand} />
+                <View style={[s.supportText, { marginLeft: isRTL ? 0 : 12, marginRight: isRTL ? 12 : 0 }]}>
+                  <Text style={[s.supportTitle, { textAlign: isRTL ? 'right' : 'left' }]}>{t.needHelp}</Text>
+                  <Text style={[s.supportDescription, { textAlign: isRTL ? 'right' : 'left' }]}>
                     {t.contactSupport}
                   </Text>
                 </View>
-                <TouchableOpacity style={styles.supportButton}>
-                  <Text style={styles.supportButtonText}>{t.getHelp}</Text>
-                </TouchableOpacity>
               </View>
+              <TouchableOpacity
+                style={s.supportButton}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  // Add navigation to support if needed
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={s.supportButtonText}>{t.getHelp}</Text>
+              </TouchableOpacity>
             </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </LinearGradient>
+          </Animated.View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
-  safeArea: {
+// --- Styles (exactly copied from SignupScreen and adapted) ---
+const s = StyleSheet.create({
+  safe: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: C.bg,
   },
-  gradientBackground: {
-    flex: 1,
-  },
-  scrollContainer: {
+  scroll: {
     flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingVertical: Platform.OS === 'ios' ? 40 : 32,
+    paddingHorizontal: 24,
+    paddingBottom: 48,
+    justifyContent: 'center',
   },
-  header: {
-    alignItems: "center", // Keep centered
-    marginBottom: 32,
+  // Top navigation
+  topNav: {
+    paddingTop: 12,
+    paddingBottom: 4,
   },
-  iconContainer: {
-    marginBottom: 20,
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: C.card,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  iconGradient: {
+  // Headline
+  headline: {
+    marginTop: 20,
+    marginBottom: 24,
+  },
+  headlineTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: C.text,
+    letterSpacing: -0.4,
+    marginBottom: 6,
+  },
+  headlineSub: {
+    fontSize: 14,
+    color: C.textSecondary,
+    lineHeight: 20,
+  },
+  // Icon circle
+  iconWrap: {
+    alignItems: 'center',
+    marginBottom: 28,
+  },
+  iconCircle: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    justifyContent: "center",
-    alignItems: "center",
-    ...Platform.select({
-      ios: {
-        shadowColor: Colors.primary,
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.3,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    marginBottom: 12,
-    color: Colors.text.primary,
-    letterSpacing: -0.5,
-    textAlign: 'center', // Center text
-  },
-  subtitle: {
-    fontSize: 16,
-    color: Colors.text.secondary,
-    textAlign: 'center', // Center text
-    paddingHorizontal: 20,
-    lineHeight: 24,
-  },
-  illustrationContainer: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  illustration: {
-    position: 'relative',
+    backgroundColor: '#EDE8E0',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
-  illustrationGradient: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: Colors.primary,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.2,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 6,
-      },
-    }),
+  // Form container
+  form: {
+    gap: 16,
   },
-  truckIcon: {
-    position: 'absolute',
-    bottom: -8,
-    right: -8,
-    backgroundColor: Colors.primary,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: Colors.background,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 6,
-      },
-    }),
-  },
-  formContainer: {
-    width: '100%',
-    backgroundColor: Colors.background,
-    borderRadius: 24,
-    padding: 24,
-    marginBottom: 24,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.1,
-        shadowRadius: 20,
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
-  },
-  inputGroup: {
-    marginBottom: 20,
+  // Field styles
+  field: {
+    gap: 6,
   },
   label: {
-    fontSize: 16,
-    color: Colors.text.primary,
-    marginBottom: 12,
+    fontSize: 13,
     fontWeight: '600',
+    color: C.text,
+    letterSpacing: 0.1,
+  },
+  inputBox: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  labelText: {
-    fontSize: 16,
-    color: Colors.text.primary,
-    fontWeight: '600',
-  },
-  inputContainer: {
-    alignItems: 'center',
-    width: '100%',
-    height: 56,
+    height: 52,
     borderWidth: 1.5,
-    borderColor: Colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    backgroundColor: Colors.background,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
-      },
-      android: {
-        elevation: 1,
-      },
-    }),
+    borderColor: C.border,
+    borderRadius: 13,
+    paddingHorizontal: 13,
+    backgroundColor: C.white,
   },
-  inputContainerFocused: {
-    borderColor: Colors.primary,
-    borderWidth: 2,
-    ...Platform.select({
-      ios: {
-        shadowColor: Colors.primary,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-      },
-    }),
+  inputBoxFocused: {
+    borderColor: C.brand,
   },
-  inputContainerError: {
-    borderColor: Colors.error,
-    borderWidth: 1.5,
+  inputBoxError: {
+    borderColor: C.error,
+    backgroundColor: C.errorBg,
   },
   input: {
     flex: 1,
-    fontSize: 16,
-    color: Colors.text.primary,
+    fontSize: 15,
+    color: C.text,
     padding: 0,
-    fontWeight: '500',
   },
-  clearButton: {
-    padding: 4,
+  clearBtn: {
+    paddingLeft: 10,
   },
-  helperText: {
-    fontSize: 13,
-    color: Colors.text.secondary,
-    marginTop: 8,
-    fontStyle: 'italic',
-  },
-  errorContainer: {
-    marginBottom: 20,
-  },
-  errorBox: {
+  // Error
+  errorRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.error + '20',
-    borderRadius: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.error,
-    padding: 12,
+    gap: 4,
+    marginTop: 2,
   },
   errorText: {
-    color: Colors.error,
-    fontSize: 14,
-    flex: 1,
+    fontSize: 12,
+    color: C.error,
     fontWeight: '500',
   },
-  button: {
-    width: '100%',
-    borderRadius: 12,
-    overflow: 'hidden',
-    marginBottom: 24,
-    ...Platform.select({
-      ios: {
-        shadowColor: Colors.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
+  // Helper text (extra)
+  helperText: {
+    fontSize: 13,
+    color: C.textSecondary,
+    marginTop: 2,
+    fontStyle: 'italic',
   },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  gradientButton: {
-    paddingVertical: 16,
+  // CTA Button
+  ctaBtn: {
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: C.brand,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#93522B',
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.28,
+        shadowRadius: 10,
+      },
+      android: { elevation: 5 },
+    }),
   },
-  buttonText: {
-    color: Colors.background,
-    fontSize: 17,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
+  ctaBtnDisabled: {
+    opacity: 0.5,
   },
+  ctaText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: C.white,
+    letterSpacing: 0.3,
+  },
+  // Features list
   featuresContainer: {
+    marginTop: 8,
+    paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    paddingTop: 20,
+    borderTopColor: C.border,
   },
   featuresTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.text.primary,
+    color: C.text,
     marginBottom: 12,
   },
   featureItem: {
+    flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
     gap: 10,
   },
   featureText: {
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: C.textSecondary,
     fontWeight: '500',
     flex: 1,
   },
-  supportContainer: {
-    width: '100%',
-  },
-  supportBox: {
-    alignItems: 'center',
-    backgroundColor: Colors.background,
-    borderRadius: 16,
+  // Support card
+  supportCard: {
+    backgroundColor: C.card,
+    borderRadius: 13,
     padding: 16,
+    marginTop: 16,
+    gap: 12,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
       },
-      android: {
-        elevation: 4,
-      },
+      android: { elevation: 2 },
     }),
   },
   supportText: {
@@ -589,23 +504,24 @@ const styles = StyleSheet.create({
   supportTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: Colors.text.primary,
+    color: C.text,
     marginBottom: 2,
   },
   supportDescription: {
     fontSize: 12,
-    color: Colors.text.secondary,
+    color: C.textSecondary,
   },
   supportButton: {
-    backgroundColor: Colors.primary + '20',
+    alignSelf: 'flex-start',
+    backgroundColor: C.brand + '20',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: Colors.primary + '40',
+    borderColor: C.brand + '40',
   },
   supportButtonText: {
-    color: Colors.primary,
+    color: C.brand,
     fontSize: 12,
     fontWeight: '600',
   },

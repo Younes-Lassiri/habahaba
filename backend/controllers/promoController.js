@@ -6,158 +6,132 @@ export const getPromoCodes = async (req, res) => {
   let connection;
   try {
     connection = await pool.getConnection();
-    const now = new Date();
 
-    // 1. Simplified SQL Query - Removed all userId and FIRST SALE logic
     const [promoCodes] = await connection.execute(
       `SELECT 
-        pc.*,
-        pc.color,
-        pc.badge
-       FROM promo_codes pc
-       WHERE pc.is_active = TRUE
-         AND pc.valid_from <= ?
-         AND pc.valid_until >= ?
-       ORDER BY pc.created_at DESC`,
-      [now, now]
+        id, code, title, description, discount_type, discount_value, 
+        min_order_amount, max_discount, valid_from, valid_until, 
+        usage_limit, used_count, is_active, color, badge, 
+        created_at, updated_at
+       FROM promo_codes 
+       WHERE is_active = TRUE 
+         AND (valid_from IS NULL OR valid_from <= NOW())
+         AND (valid_until IS NULL OR valid_until >= NOW())
+         AND (usage_limit IS NULL OR used_count < usage_limit)
+       ORDER BY created_at DESC`
     );
 
-    connection.release();
-
-    // 2. Map/Format the results
+    // 2. Clean Data Mapping
+    // Ensures IDs are strings (for React keys) and numbers are floats for logic.
     const formattedCodes = promoCodes.map((code) => ({
+      ...code,
       id: code.id.toString(),
-      code: code.code,
-      title: code.title,
-      description: code.description,
-      discount_type: code.discount_type,
-      discount_value: code.discount_value,
-      min_order_amount: code.min_order_amount,
-      max_discount: code.max_discount,
-      valid_from: code.valid_from,
-      valid_until: code.valid_until,
-      usage_limit: code.usage_limit,
-      used_count: code.used_count,
-      is_active: code.is_active,
-      color: code.color,
-      badge: code.badge,
-      created_at: code.created_at,
-      updated_at: code.updated_at
+      discount_value: parseFloat(code.discount_value || 0),
+      min_order_amount: parseFloat(code.min_order_amount || 0),
+      max_discount: code.max_discount ? parseFloat(code.max_discount) : null,
+      used_count: parseInt(code.used_count || 0),
+      usage_limit: code.usage_limit ? parseInt(code.usage_limit) : null,
     }));
 
-    res.json({ success: true, promoCodes: formattedCodes });
+    // 3. Response
+    res.json({ 
+      success: true, 
+      count: formattedCodes.length,
+      promoCodes: formattedCodes 
+    });
 
   } catch (error) {
+    console.error("❌ Error fetching promo codes:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Server error occurred while fetching promo codes" 
+    });
+  } finally {
+    // 4. Guaranteed Connection Release
+    // Using 'finally' ensures we never leak a connection, even if the code crashes.
     if (connection) connection.release();
-    console.error("Error fetching promo codes:", error);
-    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
 // Validate and apply promo code
 export const validatePromoCode = async (req, res) => {
+  let connection;
   try {
     const { code, subtotal } = req.body;
 
     if (!code) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Promo code is required" 
-      });
+      return res.status(400).json({ success: false, message: "Promo code is required" });
     }
 
-    if (!subtotal || subtotal <= 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Invalid subtotal amount" 
-      });
+    const currentSubtotal = parseFloat(subtotal);
+    if (isNaN(currentSubtotal) || currentSubtotal <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid subtotal amount" });
     }
 
-    const connection = await pool.getConnection();
-    const now = new Date();
+    connection = await pool.getConnection();
 
-    // Find the promo code
+    // The SQL now does the EXACT same check as getPromoCodes
     const [codes] = await connection.execute(
-      `SELECT 
-        id, code, title, discount_type, discount_value,
-        min_order_amount, max_discount, valid_from, valid_until,
-        usage_limit, used_count, is_active
-      FROM promo_codes
-      WHERE code = ? AND is_active = TRUE`,
-      [code.toUpperCase()]
+      `SELECT * FROM promo_codes 
+       WHERE code = ? 
+       AND is_active = TRUE
+       AND (valid_from IS NULL OR valid_from <= NOW())
+       AND (valid_until IS NULL OR valid_until >= NOW())
+       AND (usage_limit IS NULL OR used_count < usage_limit)`,
+      [code.trim().toUpperCase()]
     );
 
+    // If no result, it's either: Wrong code, Inactive, Expired, or Limit Reached
     if (codes.length === 0) {
-      connection.release();
       return res.status(404).json({ 
         success: false, 
-        message: "Invalid promo code" 
+        message: "This code is invalid, expired, or has reached its usage limit" 
       });
     }
 
     const promoCode = codes[0];
 
-    // Check if code is valid (date range)
-    if (new Date(promoCode.valid_from) > now || new Date(promoCode.valid_until) < now) {
-      connection.release();
-      return res.status(400).json({ 
-        success: false, 
-        message: "This promo code has expired" 
-      });
-    }
-
-    // Check usage limit
-    if (promoCode.usage_limit && promoCode.used_count >= promoCode.usage_limit) {
-      connection.release();
-      return res.status(400).json({ 
-        success: false, 
-        message: "This promo code has reached its usage limit" 
-      });
-    }
-
     // Check minimum order amount
-    if (parseFloat(promoCode.min_order_amount) > subtotal) {
-      connection.release();
+    const minAmount = parseFloat(promoCode.min_order_amount || 0);
+    if (currentSubtotal < minAmount) {
       return res.status(400).json({ 
         success: false, 
-        message: `Minimum order amount is ${promoCode.min_order_amount} MAD` 
+        message: `Minimum order amount is ${minAmount} MAD` 
       });
     }
 
     // Calculate discount
     let discountAmount = 0;
+    const discountVal = parseFloat(promoCode.discount_value || 0);
+    const maxDiscount = promoCode.max_discount ? parseFloat(promoCode.max_discount) : null;
+
     if (promoCode.discount_type === 'percentage') {
-      discountAmount = (subtotal * parseFloat(promoCode.discount_value)) / 100;
-      if (promoCode.max_discount && discountAmount > parseFloat(promoCode.max_discount)) {
-        discountAmount = parseFloat(promoCode.max_discount);
+      discountAmount = (currentSubtotal * discountVal) / 100;
+      if (maxDiscount && discountAmount > maxDiscount) {
+        discountAmount = maxDiscount;
       }
     } else if (promoCode.discount_type === 'fixed') {
-      discountAmount = parseFloat(promoCode.discount_value);
-      if (discountAmount > subtotal) {
-        discountAmount = subtotal;
-      }
-    } else if (promoCode.discount_type === 'free_delivery') {
-      // This will be handled on the frontend (delivery fee = 0)
-      discountAmount = 0;
+      discountAmount = Math.min(discountVal, currentSubtotal);
     }
-
-    connection.release();
 
     res.json({
       success: true,
       promoCode: {
-        id: promoCode.id,
+        id: promoCode.id, // Kept original type
         code: promoCode.code,
         title: promoCode.title,
         discountType: promoCode.discount_type,
-        discountValue: parseFloat(promoCode.discount_value),
-        discountAmount: discountAmount,
-        maxDiscount: promoCode.max_discount ? parseFloat(promoCode.max_discount) : null,
+        discountValue: discountVal,
+        discountAmount: Number(discountAmount.toFixed(2)),
+        maxDiscount: maxDiscount,
       },
     });
+
   } catch (error) {
-    console.error("Error validating promo code:", error);
+    console.error("❌ Error validating promo code:", error);
     res.status(500).json({ success: false, message: "Server error" });
+  } finally {
+    if (connection) connection.release();
   }
 };
 

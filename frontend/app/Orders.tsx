@@ -78,6 +78,8 @@ interface LiveProduct {
   id: number;
   name: string;
   image: string;
+  promo: boolean;
+  promoValue: number;
   price: number;
   final_price: number;
   has_offer: boolean;
@@ -260,6 +262,7 @@ export default function OrdersScreen() {
       const res = await axios.get(`https://haba-haba-api.ubua.cloud/api/auth/get-orders`, {
         params: { user_id: user.id },
       });
+      console.log('check orders zap: ', res.data.orders[0])
       const transformedOrders = (res.data.orders || []).map((order: any) => {
         const orderDate = new Date(order.created_at);
         const now = new Date();
@@ -585,8 +588,10 @@ export default function OrdersScreen() {
           if (!live) return;
           dispatch(addItem({
             id: live.id, name: live.name, description: '',
-            price: live.discount_applied ? live.final_price : live.price,
-            quantity: historyItem.quantity, image: live.image,
+            price: live.promo && live.promoValue
+              ? Math.max((live.price || 0) - (live.price || 0) * (live.promoValue / 100), 0)
+              : live.discount_applied ? live.final_price : live.price,
+              quantity: historyItem.quantity, image: live.image,
             restaurant: restaurant_name || live.restaurant || 'Restaurant',
             discount_applied: live.discount_applied, original_price: live.price,
             offer_info: live.discount_applied ? live.offer_info : null,

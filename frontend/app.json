@@ -6,7 +6,7 @@
       "resizeMode": "contain"
     },
     "name": "HabaHaba Food Delivery",
-    "slug": "lamadone-food-delivery-app",
+    "slug": "habba-habba-food-delivery-app",
     "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/playStoreLogo.png",
@@ -61,11 +61,15 @@
         }
       ],
       "expo-router",
-      "./withNotificationConflict.js"
+      "./withNotificationConflict.js",
+      "@react-native-community/datetimepicker",
+      "expo-font",
+      "expo-image"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.younesthegoat.restaurantapp",
+      "bundleIdentifier": "com.habba.app",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "UIBackgroundModes": [
           "audio"
@@ -82,7 +86,7 @@
       }
     },
     "android": {
-      "package": "com.younesthegoat.restaurantapp",
+      "package": "com.habba.app",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.INTERNET",

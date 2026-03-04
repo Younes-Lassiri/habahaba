@@ -112,6 +112,7 @@ export const fetchHomePageData = createAsyncThunk(
       // Execute API call
       const response = await axios.get(API_URL, config);
       if (response.data.success) {
+        console.log('chek products : ', response.data.products[0]);
         return {
           categories: response.data.categories || [],
           products: response.data.products || [],

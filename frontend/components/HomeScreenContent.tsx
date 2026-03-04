@@ -42,7 +42,6 @@ import PopularProductCard from '@/components/PopularProductCard';
 import ProductGrid from '@/components/ProductGrid';
 import { RestaurantClosedBanner } from '@/components/RestaurantClosedBanner';
 import CreativeSection from '@/app/specialOffers';
-import { CategorySkeleton } from '@/components/ui/skeleton';
 import { LiveActivityBar } from '@/app/LiveActivityBar';
 
 const { width } = Dimensions.get('window');
@@ -106,7 +105,7 @@ interface RestaurantSettings {
 }
 
 interface HomeScreenContentProps {
-  userLanguage?: 'english' | 'arabic' | 'french'; // kept as fallback
+  userLanguage?: 'english' | 'arabic' | 'french';
 }
 
 export default function HomeScreenContent({ userLanguage = 'english' }: HomeScreenContentProps) {
@@ -125,6 +124,10 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
     restaurant_name,
     loading: storeLoading,
   } = useSelector((state: RootState) => state.home);
+
+  // KEY OPTIMIZATION: Check if we already have data in the Redux store.
+  // If yes, skip loading skeletons entirely — the data is already available.
+  const hasStoreData = categories.length > 0 || products.length > 0;
 
   // Local state
   const [refreshing, setRefreshing] = useState(false);
@@ -177,7 +180,10 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
   const scrollViewRef = useRef<ScrollView>(null);
   const isProgrammaticScroll = useRef(false);
   const lastScrollPosition = useRef(0);
-  const hasLoaded = useRef(false);
+
+  // KEY OPTIMIZATION: Use a module-level flag so it survives component unmount/remount
+  // when navigating between screens. This prevents re-fetching on every focus.
+  const hasFetchedOnce = useRef(hasStoreData); // if data already in store, mark as fetched
 
   // Memoized quick actions with language
   const quickActions = useMemo(() => {
@@ -233,9 +239,11 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
       }
     };
     loadSavedCategory();
-    const timer = setTimeout(restoreScrollPosition, 50);
+    // KEY OPTIMIZATION: Only restore scroll position if we already have data.
+    // If data is ready, restore immediately; otherwise wait a tick for render.
+    const timer = setTimeout(restoreScrollPosition, hasStoreData ? 0 : 50);
     return () => clearTimeout(timer);
-  }, [language, restoreScrollPosition]);
+  }, [language, restoreScrollPosition, hasStoreData]);
 
   // Check for new order (modal)
   useEffect(() => {
@@ -472,25 +480,31 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
     }, 300);
   }, [handleCloseThankYouModal, router]);
 
-  // Initial data load
+  // KEY OPTIMIZATION: Initial data load.
+  // Only fetch from network if we don't already have data in Redux store.
+  // User/restaurant settings are cheap (AsyncStorage / lightweight API) so always refresh them.
   useEffect(() => {
     const loadData = async () => {
       try {
-        const hasData = categories.length > 0 || products.length > 0;
-        await Promise.all([
+        const fetchPromises: Promise<any>[] = [
           fetchUserAddress(),
           fetchRestaurantSettings(),
-          !hasData ? dispatch(fetchHomePageData()) : Promise.resolve(),
-        ]);
+        ];
+
+        // Only fetch products/categories from network if store is empty
+        if (!hasFetchedOnce.current) {
+          hasFetchedOnce.current = true;
+          fetchPromises.push(dispatch(fetchHomePageData()) as any);
+        }
+
+        await Promise.all(fetchPromises);
       } catch (error) {
         console.error('Error in loadData:', error);
       }
     };
-    if (!hasLoaded.current) {
-      hasLoaded.current = true;
-      loadData();
-    }
-  }, []);
+
+    loadData();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update "All" category when language changes
   useEffect(() => {
@@ -513,7 +527,11 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
     [language]
   );
 
-  const isLoading = storeLoading || loadingLang;
+  // KEY OPTIMIZATION: isLoading is only true when:
+  //   1. We don't already have store data (first ever load), AND
+  //   2. The store reports it's loading
+  // If the user navigates back and store already has data, isLoading = false immediately.
+  const isLoading = !hasStoreData && (storeLoading || loadingLang);
 
   // Header container style
   const headerContainerStyle = useMemo(() => ({
@@ -734,7 +752,7 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
           }
         }}
       >
-        {/* Header - Redesigned */}
+        {/* Header */}
         <Animated.View style={[{ opacity: headerOpacity }, headerContainerStyle]}>
           <View style={[simpleHeaderStyles.header, { paddingHorizontal: 16, paddingBottom: 16 }]}>
             {/* Top Row - Brand and Profile */}
@@ -844,7 +862,8 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
           </View>
         </Animated.View>
 
-        <LiveActivityBar/>
+        <LiveActivityBar />
+
         {/* Restaurant Closed Banner */}
         {!restaurantIsOpen && <RestaurantClosedBanner showHoursButton userLanguage={language} />}
 
@@ -888,7 +907,6 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
 
         {/* Categories Section */}
         <View style={styles.creativeSection}>
-          {/* Category Carousel */}
           <View style={styles.categoryCarouselContainer}>
             <View style={[styles.categorySectionHeader, isRTL && styles.categorySectionHeaderAr]}>
               <Text style={styles.categorySectionTitle}>
@@ -901,6 +919,8 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
               contentContainerStyle={styles.categoryScrollContent}
               style={styles.categoryScrollView}
             >
+              {/* KEY OPTIMIZATION: Show skeletons ONLY if isLoading is true (store empty + network in flight).
+                  If the user returns and store already has data, isLoading = false → real items render instantly. */}
               {isLoading
                 ? [...Array(5)].map((_, idx) => (
                     <View key={idx} style={[styles.categoryItem, idx === 0 && styles.categoryItemFirst]}>
@@ -1100,7 +1120,7 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
   );
 }
 
-// ========== STYLES (mostly unchanged, but filter modal redesigned) ==========
+// ========== STYLES ==========
 
 const stylesPopular = StyleSheet.create({
   popularItemsContainer: {
@@ -2203,9 +2223,8 @@ const filterModalStyles = StyleSheet.create({
   },
 });
 
-// ========== HEADER STYLES (updated for new header) ==========
+// ========== HEADER STYLES ==========
 const simpleHeaderStyles = StyleSheet.create({
-  // No container style here – applied via headerContainerStyle above
   header: {
     backgroundColor: 'transparent',
     gap: 8,

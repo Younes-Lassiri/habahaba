@@ -9,53 +9,65 @@ export const register = async (req, res) => {
   try {
     const { name, email, password, phone } = req.body;
 
-    // Validate required fields
-    if (!name || !email || !password || !password.trim() || !phone) {
-      return res.status(400).json({ message: "All fields are required" });
+    // 🧩 1. Cleanup: Treat empty strings/whitespace as real NULL
+    const cleanEmail = (email && email.trim() !== "") ? email.trim() : null;
+
+    // 🧩 2. Validation
+    if (!name || !password || !password.trim() || !phone) {
+      return res.status(400).json({ message: "Name, password, and phone are required" });
     }
 
-
-    // Check if client already exists
-    const [existing] = await db.execute("SELECT * FROM clients WHERE email = ?", [email]);
-    if (existing.length > 0) {
-      return res.status(409).json({ message: "Email already registered" });
+    // 🧩 3. Check for existing account
+    if (cleanEmail) {
+      const [existingEmail] = await db.execute("SELECT * FROM clients WHERE email = ?", [cleanEmail]);
+      if (existingEmail.length > 0) {
+        return res.status(409).json({ message: "Email already registered" });
+      }
     }
 
-    // Hash the password
+    const [existingPhone] = await db.execute("SELECT * FROM clients WHERE phone = ?", [phone]);
+    if (existingPhone.length > 0) {
+      return res.status(409).json({ message: "Phone number already registered" });
+    }
+
+    // 🧩 4. Hash password and Insert
     const hashedPassword = await bcrypt.hash(password.trim(), 10);
-
-    // Generate 6-digit random verification code
-    const verificationCode = Math.floor(100000 + Math.random() * 900000);
-
-    // Insert new client into DB (email not verified yet)
-    await db.execute(
-      "INSERT INTO clients (name, email, password, phone, verification_code, is_verified) VALUES (?, ?, ?, ?, ?, ?)",
-      [name, email, hashedPassword, phone, verificationCode, 0]
+    
+    const [result] = await db.execute(
+      "INSERT INTO clients (name, email, password, phone, is_verified) VALUES (?, ?, ?, ?, ?)",
+      [name, cleanEmail, hashedPassword, phone, 1]
     );
 
-    // Send verification email
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.EMAIL_USER, // your Gmail
-        pass: process.env.EMAIL_PASS, // your app password
-      },
-    });
+    const newClientId = result.insertId;
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: "Verify Your Email",
-      text: `Welcome to our app! Your verification code is: ${verificationCode}`,
-    };
+    // 🧩 5. Auto-Login: Generate JWT (Matches your login logic)
+    const token = jwt.sign(
+      { id: newClientId, email: cleanEmail, name: name },
+      process.env.JWT_SECRET,
+      { expiresIn: "36500d" } // Permanent login
+    );
 
-    await transporter.sendMail(mailOptions);
-
+    // 🧩 6. Final Response (Matches login response structure)
     res.status(201).json({
-      message: "Client registered successfully. Verification code sent to your email.",
+      message: "Registration successful",
+      client: {
+        id: newClientId,
+        name: name,
+        email: cleanEmail,
+        phone: phone,
+        gender: null,
+        bio: null,
+        image: null,
+        isPhoneVerified: 0,
+        lat: null, 
+        lon: null,
+        adresses: null,
+      },
+      token,
     });
+
   } catch (error) {
-    console.error(error);
+    console.error("❌ Register error:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -1948,14 +1960,14 @@ export const checkLiveStatus = async (req, res) => {
 
     const placeholders = productIds.map(() => '?').join(',');
 
-    // Optimized Query: 
-    // 1. Joins offers that are currently date-active.
-    // 2. Joins offer_usages to ensure the specific user has applied/claimed this offer.
+    // Main query: include promo and promoValue columns
     const query = `
       SELECT 
         p.id as product_id,
         p.name,
         p.price as original_price,
+        p.promo,
+        p.promoValue,
         p.image,
         o.id as offer_id,
         o.name as offer_name,
@@ -1968,33 +1980,29 @@ export const checkLiveStatus = async (req, res) => {
       FROM products p
       INNER JOIN offer_products op ON p.id = op.product_id
       INNER JOIN offers o ON op.offer_id = o.id 
-      INNER JOIN offer_usages ou ON o.id = ou.offer_id -- Ensures user has applied the offer
+      INNER JOIN offer_usages ou ON o.id = ou.offer_id
       WHERE p.id IN (${placeholders})
-        AND ou.user_id = ?              -- Filter for this specific user
+        AND ou.user_id = ?
         AND o.is_active = TRUE 
         AND o.start_at <= NOW() 
         AND o.end_at > NOW()
       ORDER BY o.created_at DESC 
     `;
 
-    // We pass productIds first for the IN clause, then userId for the ou.user_id filter
     const [rows] = await connection.execute(query, [...productIds, userId]);
 
     const validatedProducts = rows.map(row => {
       const originalPrice = parseFloat(row.original_price);
       let finalPrice = originalPrice;
-      let hasOffer = true; // Since we used INNER JOIN, if a row exists, it has an offer
+      let hasOffer = true;
       let discountApplied = false;
 
-      // Check Global Limit (times_used vs limited_use)
       const globalLimitNotReached = row.limited_use === null || row.times_used < row.limited_use;
-      
-      // Note: You can also add a check here for row.user_usage_count if there is a per-user limit
-      
+
       if (globalLimitNotReached) {
         discountApplied = true;
         const discount = parseFloat(row.discount_value);
-        if (row.discount_type === 'percentage') {
+        if (row.discount_type === 1) {
           finalPrice = originalPrice * (1 - discount / 100);
         } else {
           finalPrice = Math.max(0.01, originalPrice - discount);
@@ -2006,6 +2014,8 @@ export const checkLiveStatus = async (req, res) => {
         id: row.product_id,
         name: row.name,
         image: row.image,
+        promo: row.promo,                // ← keep these lines but without SQL comments
+        promoValue: row.promoValue,
         price: originalPrice,
         final_price: finalPrice,
         has_offer: hasOffer,
@@ -2025,15 +2035,14 @@ export const checkLiveStatus = async (req, res) => {
       };
     });
 
-    // Handle products that weren't in any active/applied offer
-    // We want to return them at normal price instead of excluding them
+    // Handle products without any active/applied offer
     const foundIds = validatedProducts.map(p => p.id);
     const missingIds = productIds.filter(id => !foundIds.includes(id));
 
     if (missingIds.length > 0) {
       const missingPlaceholders = missingIds.map(() => '?').join(',');
       const [normalProducts] = await connection.execute(
-        `SELECT id, name, price, image FROM products WHERE id IN (${missingPlaceholders})`,
+        `SELECT id, name, price, image, promo, promoValue FROM products WHERE id IN (${missingPlaceholders})`,
         missingIds
       );
 
@@ -2042,6 +2051,8 @@ export const checkLiveStatus = async (req, res) => {
           id: p.id,
           name: p.name,
           image: p.image,
+          promo: p.promo,
+          promoValue: p.promoValue,
           price: parseFloat(p.price),
           final_price: parseFloat(p.price),
           has_offer: false,

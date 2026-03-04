@@ -2,7 +2,7 @@
 
 **Generated:** December 18, 2025  
 **App Version:** 1.0.0  
-**Package Name:** `com.younesthegoat.restaurantapp`  
+**Package Name:** `com.habba.app`  
 **Platform:** Android (Expo/React Native)
 
 ---
@@ -13,7 +13,7 @@
 | Field | Value |
 |-------|-------|
 | **App Name** | HabaHaba |
-| **Package ID** | `com.younesthegoat.restaurantapp` |
+| **Package ID** | `com.habba.app` |
 | **Version** | 1.0.0 |
 | **Framework** | Expo SDK 54 / React Native 0.81.5 |
 | **Target Platform** | Android (iOS supported) |
@@ -320,7 +320,7 @@ Single-restaurant food delivery application for **HabaHaba Restaurant** in Laayo
 | Issue | Impact | Fix |
 |-------|--------|-----|
 | **RECORD_AUDIO permission unused** | Rejection for unnecessary permissions | Remove from `app.json` |
-| **Package name mismatch** | Firebase config uses `com.HabaHabafcm.fooddelivery` but app uses `com.younesthegoat.restaurantapp` | Align package names |
+| **Package name mismatch** | Firebase config uses `com.HabaHabafcm.fooddelivery` but app uses `com.habba.app` | Align package names |
 | **API keys in source** | Security concern | Move to environment variables |
 | **No Data Safety section info** | Required for Play Store | Prepare Data Safety responses |
 
