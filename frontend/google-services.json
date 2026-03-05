@@ -12,7 +12,20 @@
           "package_name": "com.habba.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "158740940579-q6mt4k4rqqbl8qjgn35e8rfigirbc36e.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.habba.app",
+            "certificate_hash": "12af62299edba69726e0c71ee1e82daf3ca77bb8"
+          }
+        },
+        {
+          "client_id": "158740940579-ificug8hbe28n6kjjchj3ml53f29u9ka.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyABM4rY2G3rijHtFVgLnBNpWhGETKYn3BA"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "158740940579-ificug8hbe28n6kjjchj3ml53f29u9ka.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "158740940579-q1ljk05bp6iddbg435jofeddo2tlsl7p.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.habba.app"
+              }
+            }
+          ]
         }
       }
     }

@@ -16,6 +16,7 @@ import {
   KeyboardAvoidingView,
   SafeAreaView,
   StatusBar,
+  Modal,
 } from "react-native";
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from "expo-image";
@@ -45,7 +46,31 @@ interface RestaurantSettings {
   restaurant_name: string;
 }
 
-// ── Error Message ─────────────────────────────────────────────────────────────
+// ── Translation dictionary ─────────────────────────────────────────────────
+const translations = {
+  createAccount:   { en: 'Create Account', ar: 'إنشاء حساب', fr: 'Créer un compte' },
+  joinUs:          { en: 'Join us today and enjoy authentic Moroccan flavors', ar: 'انضم إلينا اليوم واستمتع بالنكهات المغربية الأصيلة', fr: 'Rejoignez‑nous aujourd’hui et savourez les saveurs marocaines authentiques' },
+  firstNameLabel:  { en: 'First Name', ar: 'الاسم الأول', fr: 'Prénom' },
+  firstNamePlaceholder: { en: 'Ahmed', ar: 'أحمد', fr: 'Ahmed' },
+  lastNameLabel:   { en: 'Last Name', ar: 'اسم العائلة', fr: 'Nom' },
+  lastNamePlaceholder: { en: 'Hassan', ar: 'حسن', fr: 'Hassan' },
+  emailLabel:      { en: 'Email Address (Optional)', ar: 'البريد الإلكتروني (اختياري)', fr: 'Adresse e‑mail (facultative)' },
+  emailPlaceholder:{ en: 'your@email.com', ar: 'بريدك@example.com', fr: 'votre@email.com' },
+  phoneLabel:      { en: 'Phone Number', ar: 'رقم الهاتف', fr: 'Numéro de téléphone' },
+  phonePlaceholder:{ en: '6XX XXX XXX', ar: '٦XX XXX XXX', fr: '6XX XXX XXX' },
+  passwordLabel:   { en: 'Password', ar: 'كلمة المرور', fr: 'Mot de passe' },
+  passwordPlaceholder: { en: 'At least 6 characters', ar: '6 أحرف على الأقل', fr: '6 caractères minimum' },
+  termsText:       { en: 'I agree to the ', ar: 'أوافق على ', fr: 'J’accepte les ' },
+  termsOfService:  { en: 'Terms of Service', ar: 'شروط الخدمة', fr: 'Conditions d’utilisation' },
+  and:             { en: ' and ', ar: ' و ', fr: ' et ' },
+  privacyPolicy:   { en: 'Privacy Policy', ar: 'سياسة الخصوصية', fr: 'Politique de confidentialité' },
+  createAccountBtn:{ en: 'Create Account', ar: 'إنشاء حساب', fr: 'Créer un compte' },
+  alreadyAccount:  { en: 'Already have an account? ', ar: 'هل لديك حساب بالفعل؟ ', fr: 'Vous avez déjà un compte ? ' },
+  signInLink:      { en: 'Sign In', ar: 'تسجيل الدخول', fr: 'Se connecter' },
+  selectLanguage:  { en: 'Select Language', ar: 'اختر اللغة', fr: 'Choisir la langue' },
+};
+
+// ── Error Message (unchanged) ──────────────────────────────────────────────
 const ErrorMsg = ({ message }: { message?: string }) => {
   if (!message) return null;
   return (
@@ -56,14 +81,14 @@ const ErrorMsg = ({ message }: { message?: string }) => {
   );
 };
 
-// ── Reusable Field ────────────────────────────────────────────────────────────
+// ── Reusable Field with RTL support ────────────────────────────────────────
 const Field = ({
-  label, focused, error, children,
+  label, focused, error, children, isRTL,
 }: {
-  label: string; focused: boolean; error?: string; children: React.ReactNode;
+  label: string; focused: boolean; error?: string; children: React.ReactNode; isRTL?: boolean;
 }) => (
   <View style={s.field}>
-    <Text style={s.label}>{label}</Text>
+    <Text style={[s.label, isRTL && s.textRTL]}>{label}</Text>
     <View style={[s.inputBox, focused && s.inputBoxFocused, !!error && s.inputBoxError]}>
       {children}
     </View>
@@ -95,6 +120,30 @@ const SignupScreen: React.FC = () => {
     is_open: true, restaurant_logo: '', restaurant_home_screen_icon: '', restaurant_name: '',
   });
 
+  // ── Language state ───────────────────────────────────────────────────────
+  const [currentLanguage, setCurrentLanguage] = useState<'english' | 'arabic' | 'french'>('english');
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const languages = ['English', 'Arabic', 'French'];
+  const isRTL = currentLanguage === 'arabic';
+
+  // Load saved language on mount
+  useEffect(() => {
+    const loadLanguage = async () => {
+      const storedLang = await AsyncStorage.getItem('userLanguage');
+      if (storedLang && (storedLang === 'english' || storedLang === 'arabic' || storedLang === 'french')) {
+        setCurrentLanguage(storedLang);
+      }
+    };
+    loadLanguage();
+  }, []);
+
+  // Translation helper
+  const t = (key: { en: string; ar: string; fr: string }): string => {
+    if (currentLanguage === 'arabic') return key.ar;
+    if (currentLanguage === 'french') return key.fr;
+    return key.en;
+  };
+
   const fetchRestaurantSettings = async () => {
     try {
       const response = await axios.get("https://haba-haba-api.ubua.cloud/api/auth/restaurant-settings");
@@ -110,26 +159,26 @@ const SignupScreen: React.FC = () => {
 
   const [errors, setErrors] = useState<{
     firstName?: string; lastName?: string; email?: string;
-    phone?: string; password?: string; confirmPassword?: string; terms?: string;
+    phone?: string; password?: string; terms?: string;
   }>({});
 
   const handleSignup = async () => {
     const newErrors: typeof errors = {};
     const trimmedPhone = phone.trim();
 
-    if (!firstName.trim()) newErrors.firstName = "First name is required";
-    if (!lastName.trim())  newErrors.lastName  = "Last name is required";
-    if (!trimmedPhone)     newErrors.phone     = "Phone number is required";
-    if (!password)         newErrors.password  = "Password is required";
-    if (!isChecked)        newErrors.terms     = "You must agree to the terms";
+    if (!firstName.trim()) newErrors.firstName = t({ en: "First name is required", ar: "الاسم الأول مطلوب", fr: "Le prénom est requis" });
+    if (!lastName.trim())  newErrors.lastName  = t({ en: "Last name is required", ar: "اسم العائلة مطلوب", fr: "Le nom est requis" });
+    if (!trimmedPhone)     newErrors.phone     = t({ en: "Phone number is required", ar: "رقم الهاتف مطلوب", fr: "Le numéro de téléphone est requis" });
+    if (!password)         newErrors.password  = t({ en: "Password is required", ar: "كلمة المرور مطلوبة", fr: "Le mot de passe est requis" });
+    if (!isChecked)        newErrors.terms     = t({ en: "You must agree to the terms", ar: "يجب الموافقة على الشروط", fr: "Vous devez accepter les conditions" });
 
     if (!newErrors.phone && (trimmedPhone.startsWith("0") || trimmedPhone.startsWith("+212"))) {
-      newErrors.phone = "Enter number without 0 or +212";
+      newErrors.phone = t({ en: "Enter number without 0 or +212", ar: "أدخل الرقم بدون 0 أو +212", fr: "Entrez le numéro sans 0 ou +212" });
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (email.trim() && !emailRegex.test(email.trim())) {
-      newErrors.email = "Please enter a valid email address";
+      newErrors.email = t({ en: "Please enter a valid email address", ar: "الرجاء إدخال بريد إلكتروني صحيح", fr: "Veuillez saisir une adresse e‑mail valide" });
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -161,12 +210,12 @@ const SignupScreen: React.FC = () => {
         const apiErrors: typeof errors = {};
         if (response.status === 409) {
           if (data.message.toLowerCase().includes("phone")) {
-            apiErrors.phone = "This phone number is already in use";
+            apiErrors.phone = t({ en: "This phone number is already in use", ar: "رقم الهاتف هذا مستخدم بالفعل", fr: "Ce numéro de téléphone est déjà utilisé" });
           } else {
-            apiErrors.email = data.message;
+            apiErrors.email = data.message; // could be translated if needed
           }
         } else {
-          apiErrors.phone = data.message || "Signup failed";
+          apiErrors.phone = data.message || t({ en: "Signup failed", ar: "فشل إنشاء الحساب", fr: "Échec de l'inscription" });
         }
         setErrors(apiErrors);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -180,7 +229,7 @@ const SignupScreen: React.FC = () => {
 
     } catch (error) {
       console.error("Signup Error:", error);
-      setErrors({ phone: "Connection error. Please try again." });
+      setErrors({ phone: t({ en: "Connection error. Please try again.", ar: "خطأ في الاتصال. حاول مرة أخرى.", fr: "Erreur de connexion. Veuillez réessayer." }) });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setLoading(false);
@@ -190,6 +239,18 @@ const SignupScreen: React.FC = () => {
   return (
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+
+      {/* Top right language icon */}
+      <View style={[s.topRightButtons, { top: Platform.OS === 'ios' ? 54 : 50 }]}>
+        <TouchableOpacity
+          style={s.iconButton}
+          onPress={() => setShowLanguageModal(true)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="language-outline" size={22} color={C.text} />
+        </TouchableOpacity>
+      </View>
+
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -201,20 +262,20 @@ const SignupScreen: React.FC = () => {
           keyboardShouldPersistTaps="handled"
         >
 
-          {/* ── Back Button — mirrors SignIn topNav ── */}
+          {/* ── Back Button — no flip ── */}
           <Animated.View entering={FadeInDown.delay(40).springify()} style={s.topNav}>
             <TouchableOpacity style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
               <Ionicons name="arrow-back" size={22} color={C.text} />
             </TouchableOpacity>
           </Animated.View>
 
-          {/* ── Headline — mirrors SignIn headlineBlock ── */}
+          {/* ── Headline ── */}
           <Animated.View entering={FadeInDown.delay(90).springify()} style={s.headline}>
-            <Text style={s.headlineTitle}>Create Account</Text>
-            <Text style={s.headlineSub}>Join us today and enjoy authentic Moroccan flavors</Text>
+            <Text style={[s.headlineTitle, isRTL && s.textRTL]}>{t(translations.createAccount)}</Text>
+            <Text style={[s.headlineSub, isRTL && s.textRTL]}>{t(translations.joinUs)}</Text>
           </Animated.View>
 
-          {/* ── Logo Circle — mirrors SignIn iconWrap ── */}
+          {/* ── Logo Circle ── */}
           <Animated.View entering={FadeInDown.delay(140).springify()} style={s.iconWrap}>
             <View style={s.iconCircle}>
               <Image source={SignupHeader} style={s.iconImg} resizeMode="contain" />
@@ -224,44 +285,46 @@ const SignupScreen: React.FC = () => {
           {/* ── Form ── */}
           <Animated.View entering={FadeInDown.delay(190).springify()} style={s.form}>
 
-            {/* Name row */}
-            <View style={s.row}>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Field label="First Name" focused={firstNameFocused} error={errors.firstName}>
+            {/* Name row (order unchanged, but inputs align RTL) */}
+            <View style={[s.row, isRTL && s.rowRTL]}>
+              <View style={{ flex: 1, marginRight: isRTL ? 0 : 8, marginLeft: isRTL ? 8 : 0 }}>
+                <Field label={t(translations.firstNameLabel)} focused={firstNameFocused} error={errors.firstName} isRTL={isRTL}>
                   <TextInput
-                    placeholder="Ahmed"
+                    placeholder={t(translations.firstNamePlaceholder)}
                     placeholderTextColor={C.textMuted}
-                    style={s.input}
+                    style={[s.input, isRTL && s.inputRTL]}
                     value={firstName}
                     onChangeText={(t) => { setFirstName(t); if (errors.firstName) setErrors({ ...errors, firstName: undefined }); }}
                     onFocus={() => { setFirstNameFocused(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                     onBlur={() => setFirstNameFocused(false)}
                     editable={!loading}
+                    textAlign={isRTL ? 'right' : 'left'}
                   />
                 </Field>
               </View>
-              <View style={{ flex: 1, marginLeft: 8 }}>
-                <Field label="Last Name" focused={lastNameFocused} error={errors.lastName}>
+              <View style={{ flex: 1, marginLeft: isRTL ? 0 : 8, marginRight: isRTL ? 8 : 0 }}>
+                <Field label={t(translations.lastNameLabel)} focused={lastNameFocused} error={errors.lastName} isRTL={isRTL}>
                   <TextInput
-                    placeholder="Hassan"
+                    placeholder={t(translations.lastNamePlaceholder)}
                     placeholderTextColor={C.textMuted}
-                    style={s.input}
+                    style={[s.input, isRTL && s.inputRTL]}
                     value={lastName}
                     onChangeText={(t) => { setLastName(t); if (errors.lastName) setErrors({ ...errors, lastName: undefined }); }}
                     onFocus={() => { setLastNameFocused(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                     onBlur={() => setLastNameFocused(false)}
                     editable={!loading}
+                    textAlign={isRTL ? 'right' : 'left'}
                   />
                 </Field>
               </View>
             </View>
 
             {/* Email */}
-            <Field label="Email Address (Optional)" focused={emailFocused} error={errors.email}>
+            <Field label={t(translations.emailLabel)} focused={emailFocused} error={errors.email} isRTL={isRTL}>
               <TextInput
-                placeholder="your@email.com"
+                placeholder={t(translations.emailPlaceholder)}
                 placeholderTextColor={C.textMuted}
-                style={s.input}
+                style={[s.input, isRTL && s.inputRTL]}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -270,44 +333,47 @@ const SignupScreen: React.FC = () => {
                 onFocus={() => { setEmailFocused(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                 onBlur={() => setEmailFocused(false)}
                 editable={!loading}
+                textAlign={isRTL ? 'right' : 'left'}
               />
             </Field>
 
-            {/* Phone */}
+            {/* Phone (prefix remains LTR) */}
             <View style={s.field}>
-              <Text style={s.label}>Phone Number</Text>
+              <Text style={[s.label, isRTL && s.textRTL]}>{t(translations.phoneLabel)}</Text>
               <View style={[s.phoneBox, phoneFocused && s.inputBoxFocused, !!errors.phone && s.inputBoxError]}>
                 <View style={s.prefix}>
                   <Text style={s.prefixText}>+212</Text>
                 </View>
                 <View style={s.phoneDivider} />
                 <TextInput
-                  placeholder="6XX XXX XXX"
+                  placeholder={t(translations.phonePlaceholder)}
                   placeholderTextColor={C.textMuted}
-                  style={s.phoneInput}
+                  style={[s.phoneInput, isRTL && s.inputRTL]}
                   keyboardType="phone-pad"
                   value={phone}
                   onChangeText={(t) => { setPhone(t); if (errors.phone) setErrors({ ...errors, phone: undefined }); }}
                   onFocus={() => { setPhoneFocused(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                   onBlur={() => setPhoneFocused(false)}
                   editable={!loading}
+                  textAlign={isRTL ? 'right' : 'left'}
                 />
               </View>
               <ErrorMsg message={errors.phone} />
             </View>
 
             {/* Password */}
-            <Field label="Password" focused={passwordFocused} error={errors.password}>
+            <Field label={t(translations.passwordLabel)} focused={passwordFocused} error={errors.password} isRTL={isRTL}>
               <TextInput
-                placeholder="At least 6 characters"
+                placeholder={t(translations.passwordPlaceholder)}
                 placeholderTextColor={C.textMuted}
-                style={[s.input, { flex: 1 }]}
+                style={[s.input, isRTL && s.inputRTL, { flex: 1 }]}
                 secureTextEntry={!showPassword}
                 value={password}
                 onChangeText={(t) => { setPassword(t); if (errors.password) setErrors({ ...errors, password: undefined }); }}
                 onFocus={() => { setPasswordFocused(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                 onBlur={() => setPasswordFocused(false)}
                 editable={!loading}
+                textAlign={isRTL ? 'right' : 'left'}
               />
               <TouchableOpacity
                 onPress={() => { setShowPassword(!showPassword); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
@@ -317,8 +383,8 @@ const SignupScreen: React.FC = () => {
               </TouchableOpacity>
             </Field>
 
-            {/* Terms */}
-            <View style={s.termsRow}>
+            {/* Terms (RTL aware) */}
+            <View style={[s.termsRow, isRTL && s.termsRowRTL]}>
               <TouchableOpacity
                 style={s.checkbox}
                 onPress={() => {
@@ -332,14 +398,14 @@ const SignupScreen: React.FC = () => {
                   {isChecked && <Ionicons name="checkmark" size={12} color={C.white} />}
                 </View>
               </TouchableOpacity>
-              <Text style={s.termsText}>
-                I agree to the{" "}
+              <Text style={[s.termsText, isRTL && s.textRTL]}>
+                {t(translations.termsText)}
                 <Text style={s.termsLink} onPress={() => { router.push("/TermsOfService"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}>
-                  Terms of Service
+                  {t(translations.termsOfService)}
                 </Text>
-                {" "}and{" "}
+                {t(translations.and)}
                 <Text style={s.termsLink} onPress={() => { router.push("/PrivacyPolicy"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}>
-                  Privacy Policy
+                  {t(translations.privacyPolicy)}
                 </Text>
               </Text>
             </View>
@@ -354,24 +420,86 @@ const SignupScreen: React.FC = () => {
             >
               {loading
                 ? <ActivityIndicator color={C.white} size="small" />
-                : <Text style={s.ctaText}>Create Account</Text>
+                : <Text style={s.ctaText}>{t(translations.createAccountBtn)}</Text>
               }
             </TouchableOpacity>
 
-            {/* Footer */}
-            <View style={s.footer}>
-              <Text style={s.footerText}>Already have an account? </Text>
+            {/* Footer (RTL aware) */}
+            <View style={[s.footer, isRTL && s.footerRTL]}>
+              <Text style={[s.footerText, isRTL && s.textRTL]}>{t(translations.alreadyAccount)}</Text>
               <TouchableOpacity
                 onPress={() => { router.push("/signin"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
                 activeOpacity={0.7}
               >
-                <Text style={s.signInLink}>Sign In</Text>
+                <Text style={[s.signInLink, isRTL && s.textRTL]}>{t(translations.signInLink)}</Text>
               </TouchableOpacity>
             </View>
 
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Language Selection Modal (RTL aware) */}
+      <Modal
+        visible={showLanguageModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowLanguageModal(false)}
+      >
+        <View style={s.modalOverlay}>
+          <View style={s.modalContent}>
+            <View style={[s.modalHeader, isRTL && s.modalHeaderRTL]}>
+              {isRTL ? (
+                <>
+                  <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
+                    <Ionicons name="close" size={24} color={C.text} />
+                  </TouchableOpacity>
+                  <Text style={[s.modalTitle, s.textRTL]}>{t(translations.selectLanguage)}</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={s.modalTitle}>{t(translations.selectLanguage)}</Text>
+                  <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
+                    <Ionicons name="close" size={24} color={C.text} />
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+            <ScrollView>
+              {languages.map((language) => {
+                const langCode = language === 'English' ? 'english' : language === 'Arabic' ? 'arabic' : 'french';
+                return (
+                  <TouchableOpacity
+                    key={language}
+                    style={[
+                      s.modalOption,
+                      currentLanguage === langCode && s.modalOptionActive,
+                    ]}
+                    onPress={async () => {
+                      setCurrentLanguage(langCode);
+                      await AsyncStorage.setItem('userLanguage', langCode);
+                      setShowLanguageModal(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        s.modalOptionText,
+                        currentLanguage === langCode && s.modalOptionTextActive,
+                        isRTL && s.textRTL,
+                      ]}
+                    >
+                      {language}
+                    </Text>
+                    {currentLanguage === langCode && (
+                      <Ionicons name="checkmark" size={20} color={C.brand} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -386,6 +514,27 @@ const s = StyleSheet.create({
     paddingHorizontal: 24,
     paddingBottom: 48,
     justifyContent: 'center',
+  },
+
+  // Top right language icon
+  topRightButtons: {
+    position: 'absolute',
+    right: 20,
+    zIndex: 100,
+  },
+  iconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: C.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: C.border,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 5 },
+      android: { elevation: 3 },
+    }),
   },
 
   // ── Top Nav ───────────────────────────────────────────────────────────────
@@ -447,6 +596,9 @@ const s = StyleSheet.create({
   row: {
     flexDirection: 'row',
   },
+  rowRTL: {
+    flexDirection: 'row-reverse',
+  },
 
   // ── Field ─────────────────────────────────────────────────────────────────
   field: {
@@ -480,6 +632,9 @@ const s = StyleSheet.create({
     fontSize: 15,
     color: C.text,
     padding: 0,
+  },
+  inputRTL: {
+    textAlign: 'right',
   },
   eyeBtn: {
     paddingLeft: 10,
@@ -542,6 +697,9 @@ const s = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 10,
     marginTop: 4,
+  },
+  termsRowRTL: {
+    flexDirection: 'row-reverse',
   },
   checkbox: {
     marginTop: 2,
@@ -606,6 +764,9 @@ const s = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 8,
   },
+  footerRTL: {
+    flexDirection: 'row-reverse',
+  },
   footerText: {
     fontSize: 14,
     color: C.textSecondary,
@@ -614,6 +775,63 @@ const s = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: C.brand,
+  },
+
+  // ── RTL text alignment helper ─────────────────────────────────────────────
+  textRTL: {
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  // ── Modal styles ──────────────────────────────────────────────────────────
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalHeaderRTL: {
+    flexDirection: 'row-reverse',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: C.text,
+  },
+  modalOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    marginBottom: 5,
+  },
+  modalOptionActive: {
+    backgroundColor: '#FFEDD5',
+  },
+  modalOptionText: {
+    fontSize: 16,
+    color: C.text,
+  },
+  modalOptionTextActive: {
+    color: C.brand,
+    fontWeight: '500',
   },
 });
 

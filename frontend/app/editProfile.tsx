@@ -23,8 +23,14 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+const ANDROID_API_KEY = 'AIzaSyABM4rY2G3rijHtFVgLnBNpWhGETKYn3BA';
+const IOS_API_KEY = 'AIzaSyCzxfUcrGi6V6D_cEXrmmB4sqTdl_8KL6Y';
+
 // Your Google Maps API Key
-const GOOGLE_API_KEY = 'AIzaSyCx4qoEgZzG3A7VW9_gxpEWAqMSeNs_DfY';
+const GOOGLE_API_KEY = Platform.select({
+  android: ANDROID_API_KEY,
+  ios: IOS_API_KEY,
+});
 
 const EditProfile: React.FC = () => {
   const insets = useSafeAreaInsets();

@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from "expo-router";
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { registerForPushNotificationsAsync } from "@/utils/notifications";
 import { FontAwesome, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -11,6 +11,7 @@ import {
   Alert,
   Dimensions,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -47,8 +48,28 @@ const C = {
   googleRed:    '#DB4437',
 };
 
-// ─── Standalone sub-components (outside parent to prevent remount) ─────────────
+// ─── Translation dictionary ─────────────────────────────────────────────────
+const translations = {
+  headlineTitle:   { en: 'Welcome Back', ar: 'مرحبًا بعودتك', fr: 'Bon retour' },
+  headlineSub:     { en: 'Sign in to continue ordering your favorite Moroccan dishes', ar: 'سجل الدخول لمتابعة طلب أطباقك المغربية المفضلة', fr: 'Connectez‑vous pour continuer à commander vos plats marocains préférés' },
+  emailLabel:      { en: 'Email Address', ar: 'البريد الإلكتروني', fr: 'Adresse e‑mail' },
+  emailPlaceholder:{ en: 'your@email.com', ar: 'بريدك@ example.com', fr: 'votre@email.com' },
+  passwordLabel:   { en: 'Password', ar: 'كلمة المرور', fr: 'Mot de passe' },
+  passwordPlaceholder: { en: 'Enter your password', ar: 'أدخل كلمة المرور', fr: 'Entrez votre mot de passe' },
+  phoneLabel:      { en: 'Phone Number', ar: 'رقم الهاتف', fr: 'Numéro de téléphone' },
+  phonePlaceholder:{ en: '6XX XXX XXX', ar: '٦XX XXX XXX', fr: '6XX XXX XXX' },
+  forgotPassword:  { en: 'Forgot Password?', ar: 'نسيت كلمة المرور؟', fr: 'Mot de passe oublié ?' },
+  signIn:          { en: 'Sign In', ar: 'تسجيل الدخول', fr: 'Se connecter' },
+  or:              { en: 'OR', ar: 'أو', fr: 'OU' },
+  continueWithGoogle: { en: 'Continue with Google', ar: 'متابعة عبر جوجل', fr: 'Continuer avec Google' },
+  noAccount:       { en: "Don't have an account? ", ar: 'ليس لديك حساب؟ ', fr: 'Pas de compte ? ' },
+  signUp:          { en: 'Sign Up', ar: 'تسجيل حساب', fr: "S'inscrire" },
+  selectLanguage:  { en: 'Select Language', ar: 'اختر اللغة', fr: 'Choisir la langue' },
+  emailTab:        { en: 'Email', ar: 'البريد الإلكتروني', fr: 'E-mail' },
+  phoneTab:        { en: 'Phone', ar: 'الهاتف', fr: 'Téléphone' },
+};
 
+// ─── Standalone sub-components with RTL support ─────────────────────────────
 interface EmailFormProps {
   email: string; setEmail: (t: string) => void;
   password: string; setPassword: (t: string) => void;
@@ -57,6 +78,8 @@ interface EmailFormProps {
   emailFocused: boolean; setEmailFocused: (v: boolean) => void;
   passwordFocused: boolean; setPasswordFocused: (v: boolean) => void;
   router: ReturnType<typeof useRouter>;
+  t: (key: { en: string; ar: string; fr: string }) => string;
+  isRTL: boolean;
 }
 
 const EmailForm: React.FC<EmailFormProps> = React.memo(({
@@ -65,12 +88,12 @@ const EmailForm: React.FC<EmailFormProps> = React.memo(({
   showPassword, setShowPassword,
   emailFocused, setEmailFocused,
   passwordFocused, setPasswordFocused,
-  router,
+  router, t, isRTL
 }) => (
   <>
     {/* Email */}
     <Animated.View entering={FadeInDown.delay(200).springify()} style={s.fieldGroup}>
-      <Text style={s.label}>Email Address</Text>
+      <Text style={[s.label, isRTL && s.textRTL]}>{t(translations.emailLabel)}</Text>
       <View style={[s.inputBox, emailFocused && s.inputBoxFocused]}>
         <Ionicons
           name="mail-outline" size={17}
@@ -78,8 +101,8 @@ const EmailForm: React.FC<EmailFormProps> = React.memo(({
           style={s.inputIcon}
         />
         <TextInput
-          style={s.input}
-          placeholder="your@email.com"
+          style={[s.input, isRTL && s.inputRTL]}
+          placeholder={t(translations.emailPlaceholder)}
           placeholderTextColor={C.textMuted}
           keyboardType="email-address"
           autoCapitalize="none"
@@ -89,13 +112,14 @@ const EmailForm: React.FC<EmailFormProps> = React.memo(({
           onFocus={() => { setEmailFocused(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
           onBlur={() => setEmailFocused(false)}
           editable={!loading}
+          textAlign={isRTL ? 'right' : 'left'}
         />
       </View>
     </Animated.View>
 
     {/* Password */}
     <Animated.View entering={FadeInDown.delay(300).springify()} style={s.fieldGroup}>
-      <Text style={s.label}>Password</Text>
+      <Text style={[s.label, isRTL && s.textRTL]}>{t(translations.passwordLabel)}</Text>
       <View style={[s.inputBox, passwordFocused && s.inputBoxFocused]}>
         <Ionicons
           name="lock-closed-outline" size={17}
@@ -103,8 +127,8 @@ const EmailForm: React.FC<EmailFormProps> = React.memo(({
           style={s.inputIcon}
         />
         <TextInput
-          style={[s.input, { flex: 1 }]}
-          placeholder="Enter your password"
+          style={[s.input, isRTL && s.inputRTL, { flex: 1 }]}
+          placeholder={t(translations.passwordPlaceholder)}
           placeholderTextColor={C.textMuted}
           secureTextEntry={!showPassword}
           value={password}
@@ -112,6 +136,7 @@ const EmailForm: React.FC<EmailFormProps> = React.memo(({
           onFocus={() => { setPasswordFocused(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
           onBlur={() => setPasswordFocused(false)}
           editable={!loading}
+          textAlign={isRTL ? 'right' : 'left'}
         />
         <TouchableOpacity
           onPress={() => { setShowPassword(!showPassword); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
@@ -123,12 +148,12 @@ const EmailForm: React.FC<EmailFormProps> = React.memo(({
     </Animated.View>
 
     {/* Forgot */}
-    <Animated.View entering={FadeInDown.delay(360).springify()} style={s.forgotRow}>
+    <Animated.View entering={FadeInDown.delay(360).springify()} style={[s.forgotRow, isRTL && s.forgotRowRTL]}>
       <TouchableOpacity
         onPress={() => { router.push("/forgotPasswordScreen"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
         activeOpacity={0.7}
       >
-        <Text style={s.forgotText}>Forgot Password?</Text>
+        <Text style={[s.forgotText, isRTL && s.textRTL]}>{t(translations.forgotPassword)}</Text>
       </TouchableOpacity>
     </Animated.View>
 
@@ -142,7 +167,7 @@ const EmailForm: React.FC<EmailFormProps> = React.memo(({
       >
         {loading
           ? <ActivityIndicator color={C.white} />
-          : <Text style={s.ctaText}>Sign In</Text>
+          : <Text style={s.ctaText}>{t(translations.signIn)}</Text>
         }
       </TouchableOpacity>
     </Animated.View>
@@ -157,6 +182,8 @@ interface PhoneFormProps {
   passwordFocused: boolean; setPasswordFocused: (v: boolean) => void;
   loading: boolean; handlePhoneSignIn: () => Promise<void>;
   router: ReturnType<typeof useRouter>;
+  t: (key: { en: string; ar: string; fr: string }) => string;
+  isRTL: boolean;
 }
 
 const PhoneForm: React.FC<PhoneFormProps> = React.memo(({
@@ -164,20 +191,20 @@ const PhoneForm: React.FC<PhoneFormProps> = React.memo(({
   showPassword, setShowPassword,
   phoneFocused, setPhoneFocused,
   passwordFocused, setPasswordFocused,
-  loading, handlePhoneSignIn, router,
+  loading, handlePhoneSignIn, router, t, isRTL
 }) => (
   <>
     {/* Phone */}
     <Animated.View entering={FadeInDown.delay(200).springify()} style={s.fieldGroup}>
-      <Text style={s.label}>Phone Number</Text>
+      <Text style={[s.label, isRTL && s.textRTL]}>{t(translations.phoneLabel)}</Text>
       <View style={[s.phoneBox, phoneFocused && s.inputBoxFocused]}>
         <View style={s.prefix}>
           <Text style={s.prefixText}>+212</Text>
         </View>
         <View style={s.phoneDivider} />
         <TextInput
-          style={s.phoneInput}
-          placeholder="6XX XXX XXX"
+          style={[s.phoneInput, isRTL && s.inputRTL]}
+          placeholder={t(translations.phonePlaceholder)}
           placeholderTextColor={C.textMuted}
           keyboardType="phone-pad"
           value={phone}
@@ -185,13 +212,14 @@ const PhoneForm: React.FC<PhoneFormProps> = React.memo(({
           onFocus={() => { setPhoneFocused(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
           onBlur={() => setPhoneFocused(false)}
           editable={!loading}
+          textAlign={isRTL ? 'right' : 'left'}
         />
       </View>
     </Animated.View>
 
     {/* Password */}
     <Animated.View entering={FadeInDown.delay(300).springify()} style={s.fieldGroup}>
-      <Text style={s.label}>Password</Text>
+      <Text style={[s.label, isRTL && s.textRTL]}>{t(translations.passwordLabel)}</Text>
       <View style={[s.inputBox, passwordFocused && s.inputBoxFocused]}>
         <Ionicons
           name="lock-closed-outline" size={17}
@@ -199,8 +227,8 @@ const PhoneForm: React.FC<PhoneFormProps> = React.memo(({
           style={s.inputIcon}
         />
         <TextInput
-          style={[s.input, { flex: 1 }]}
-          placeholder="Enter your password"
+          style={[s.input, isRTL && s.inputRTL, { flex: 1 }]}
+          placeholder={t(translations.passwordPlaceholder)}
           placeholderTextColor={C.textMuted}
           secureTextEntry={!showPassword}
           value={password}
@@ -208,6 +236,7 @@ const PhoneForm: React.FC<PhoneFormProps> = React.memo(({
           onFocus={() => { setPasswordFocused(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
           onBlur={() => setPasswordFocused(false)}
           editable={!loading}
+          textAlign={isRTL ? 'right' : 'left'}
         />
         <TouchableOpacity
           onPress={() => { setShowPassword(!showPassword); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
@@ -219,12 +248,12 @@ const PhoneForm: React.FC<PhoneFormProps> = React.memo(({
     </Animated.View>
 
     {/* Forgot */}
-    <Animated.View entering={FadeInDown.delay(360).springify()} style={s.forgotRow}>
+    <Animated.View entering={FadeInDown.delay(360).springify()} style={[s.forgotRow, isRTL && s.forgotRowRTL]}>
       <TouchableOpacity
         onPress={() => { router.push("/forgotPasswordScreen"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
         activeOpacity={0.7}
       >
-        <Text style={s.forgotText}>Forgot Password?</Text>
+        <Text style={[s.forgotText, isRTL && s.textRTL]}>{t(translations.forgotPassword)}</Text>
       </TouchableOpacity>
     </Animated.View>
 
@@ -238,22 +267,19 @@ const PhoneForm: React.FC<PhoneFormProps> = React.memo(({
       >
         {loading
           ? <ActivityIndicator color={C.white} />
-          : <Text style={s.ctaText}>Sign In</Text>
+          : <Text style={s.ctaText}>{t(translations.signIn)}</Text>
         }
       </TouchableOpacity>
     </Animated.View>
   </>
 ));
 
-// ─── Tab bar constants ────────────────────────────────────────────────────────
-// Outer padding: 24 each side = 48. Tab bar inner padding: 4 each side = 8.
-// Total width taken from screen: 48 (screen padding) + 8 (tab inner) = 56
-// Each tab = (screenWidth - 56) / 2
+// ─── Tab bar constants ──────────────────────────────────────────────────────
 const TAB_BAR_INNER_PAD = 4;
 const SCREEN_H_PAD = 24;
 const TAB_WIDTH = (width - SCREEN_H_PAD * 2 - TAB_BAR_INNER_PAD * 2) / 2;
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Main Component ─────────────────────────────────────────────────────────
 const SignIn: React.FC = () => {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
@@ -271,6 +297,31 @@ const SignIn: React.FC = () => {
   const [countryCode, setCountryCode] = useState('+212');
   const { login } = useAuth();
 
+  // ── Language state ───────────────────────────────────────────────────────
+  const [currentLanguage, setCurrentLanguage] = useState<'english' | 'arabic' | 'french'>('english');
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const languages = ['English', 'Arabic', 'French'];
+  const isRTL = currentLanguage === 'arabic';
+
+  // Load saved language on mount
+  useEffect(() => {
+    const loadLanguage = async () => {
+      const storedLang = await AsyncStorage.getItem('userLanguage');
+      if (storedLang && (storedLang === 'english' || storedLang === 'arabic' || storedLang === 'french')) {
+        setCurrentLanguage(storedLang);
+      }
+    };
+    loadLanguage();
+  }, []);
+
+  // Translation helper
+  const t = (key: { en: string; ar: string; fr: string }): string => {
+    if (currentLanguage === 'arabic') return key.ar;
+    if (currentLanguage === 'french') return key.fr;
+    return key.en;
+  };
+
+  // ── Auth handlers (with translated alerts) ───────────────────────────────
   useFocusEffect(
     React.useCallback(() => {
       const checkToken = async () => {
@@ -285,10 +336,10 @@ const SignIn: React.FC = () => {
     }, [])
   );
 
-  // ── Auth handlers (UNCHANGED) ─────────────────────────────────────────────
   const handleSignIn = async () => {
     if (!email || !password) {
-      Alert.alert("Missing fields", "Please enter both email and password.");
+      Alert.alert(t({ en: "Missing fields", ar: "حقول مفقودة", fr: "Champs manquants" }),
+                  t({ en: "Please enter both email and password.", ar: "الرجاء إدخال البريد الإلكتروني وكلمة المرور.", fr: "Veuillez saisir l'email et le mot de passe." }));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
@@ -302,7 +353,8 @@ const SignIn: React.FC = () => {
       });
       const data = await response.json();
       if (!response.ok) {
-        Alert.alert("Login failed", data.message || "Invalid credentials.");
+        Alert.alert(t({ en: "Login failed", ar: "فشل تسجيل الدخول", fr: "Échec de la connexion" }),
+                    data.message || t({ en: "Invalid credentials.", ar: "بيانات اعتماد غير صالحة.", fr: "Identifiants invalides." }));
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         return;
       }
@@ -312,7 +364,7 @@ const SignIn: React.FC = () => {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         const adminId = data.admin.id;
         if (adminId) await registerForPushNotificationsAsync("admin", adminId);
-        else console.error('No client ID found in response!');
+        else console.error('No admin ID found!');
         router.push("/admin/orders");
         return;
       }
@@ -322,11 +374,12 @@ const SignIn: React.FC = () => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const clientId = data.client.id || data.client._id;
       if (clientId) await registerForPushNotificationsAsync("client", clientId);
-      else console.error('No client ID found in response!');
+      else console.error('No client ID found!');
       router.push("/");
     } catch (error: any) {
       console.error("Login error:", error);
-      Alert.alert("Error", error.message || "Something went wrong.");
+      Alert.alert(t({ en: "Error", ar: "خطأ", fr: "Erreur" }),
+                  error.message || t({ en: "Something went wrong.", ar: "حدث خطأ ما.", fr: "Quelque chose s'est mal passé." }));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setLoading(false);
@@ -350,7 +403,8 @@ const SignIn: React.FC = () => {
 
   const handlePhoneSignIn = async () => {
     if (!phone || !password) {
-      Alert.alert("Missing fields", "Please enter both phone number and password.");
+      Alert.alert(t({ en: "Missing fields", ar: "حقول مفقودة", fr: "Champs manquants" }),
+                  t({ en: "Please enter both phone number and password.", ar: "الرجاء إدخال رقم الهاتف وكلمة المرور.", fr: "Veuillez saisir le numéro de téléphone et le mot de passe." }));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
@@ -365,7 +419,8 @@ const SignIn: React.FC = () => {
       });
       const data = await response.json();
       if (!response.ok) {
-        Alert.alert("Login failed", data.message || "Invalid credentials.");
+        Alert.alert(t({ en: "Login failed", ar: "فشل تسجيل الدخول", fr: "Échec de la connexion" }),
+                    data.message || t({ en: "Invalid credentials.", ar: "بيانات اعتماد غير صالحة.", fr: "Identifiants invalides." }));
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         return;
       }
@@ -375,29 +430,25 @@ const SignIn: React.FC = () => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const clientId = data.client.id || data.client._id;
       if (clientId) await registerForPushNotificationsAsync("client", clientId);
-      else console.error('No client ID found in response!');
+      else console.error('No client ID found!');
       router.push("/");
     } catch (error: any) {
       console.error("Login error:", error);
-      Alert.alert("Error", error.message || "Something went wrong.");
+      Alert.alert(t({ en: "Error", ar: "خطأ", fr: "Erreur" }),
+                  error.message || t({ en: "Something went wrong.", ar: "حدث خطأ ما.", fr: "Quelque chose s'est mal passé." }));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setLoading(false);
     }
   };
 
-  {/*
-    Google sign-in handler preserved but commented out — unchanged from original
-    useEffect(() => { GoogleSignin.configure({...}); }, []);
-    const handleGoogleSignIn = async () => { ... };
-  */}
-
-  // ── Tab indicator animation ───────────────────────────────────────────────
-  // Indicator slides exactly one TAB_WIDTH. Left starts at 0, right at TAB_WIDTH.
+  // ── Tab indicator animation with RTL support ─────────────────────────────
   const tabIndicatorStyle = useAnimatedStyle(() => ({
     transform: [{
       translateX: withSpring(
-        activeTab === 'Email' ? 0 : TAB_WIDTH,
+        isRTL
+          ? (activeTab === 'Email' ? TAB_WIDTH : 0)
+          : (activeTab === 'Email' ? 0 : TAB_WIDTH),
         { damping: 20, stiffness: 180, mass: 0.6 }
       ),
     }],
@@ -407,14 +458,23 @@ const SignIn: React.FC = () => {
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
-      {/* Floating delivery button (UNCHANGED logic) */}
-      <TouchableOpacity
-        style={s.floatingBtn}
-        activeOpacity={0.7}
-        onPress={() => { router.push("/delivery/login"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
-      >
-        <Ionicons name="bicycle-outline" size={20} color={C.brand} />
-      </TouchableOpacity>
+      {/* Top right buttons: Language + Delivery */}
+      <View style={[s.topRightButtons, { top: Platform.OS === 'ios' ? 54 : 50 }]}>
+        <TouchableOpacity
+          style={s.iconButton}
+          onPress={() => setShowLanguageModal(true)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="language-outline" size={22} color={C.text} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={s.iconButton}
+          onPress={() => { router.push("/delivery/login"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="bicycle-outline" size={22} color={C.brand} />
+        </TouchableOpacity>
+      </View>
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -426,44 +486,74 @@ const SignIn: React.FC = () => {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Back */}
+          {/* Back button - always arrow-back (no flip) */}
           <Animated.View entering={FadeInDown.delay(40).springify()} style={s.topNav}>
             <TouchableOpacity style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
               <Ionicons name="arrow-back" size={22} color={C.text} />
             </TouchableOpacity>
           </Animated.View>
 
-          {/* Headline */}
+          {/* Headline with RTL text alignment */}
           <Animated.View entering={FadeInDown.delay(90).springify()} style={s.headline}>
-            <Text style={s.headlineTitle}>Welcome Back</Text>
-            <Text style={s.headlineSub}>Sign in to continue ordering your favorite Moroccan dishes</Text>
+            <Text style={[s.headlineTitle, isRTL && s.textRTL]}>{t(translations.headlineTitle)}</Text>
+            <Text style={[s.headlineSub, isRTL && s.textRTL]}>{t(translations.headlineSub)}</Text>
           </Animated.View>
 
           {/* Icon */}
           <Animated.View entering={FadeInDown.delay(140).springify()} style={s.iconWrap}>
             <View style={s.iconCircle}>
-              <Image source={LoginHeader} style={s.iconImg} resizeMode="contain" />
+              <Image source={LoginHeader} style={s.iconImg} resizeMode="contain"/>
             </View>
           </Animated.View>
 
-          {/* Tab Switcher */}
+          {/* Tab Switcher – order reversed in RTL, labels translated */}
           <Animated.View entering={FadeInDown.delay(190).springify()} style={s.tabBar}>
-            {/* Sliding indicator — exact TAB_WIDTH, no math guesswork */}
             <Animated.View style={[s.tabIndicator, { width: TAB_WIDTH }, tabIndicatorStyle]} />
-            <TouchableOpacity
-              style={[s.tabBtn, { width: TAB_WIDTH }]}
-              onPress={() => { setActiveTab('Email'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-              activeOpacity={0.8}
-            >
-              <Text style={[s.tabText, activeTab === 'Email' && s.tabTextActive]}>Email</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.tabBtn, { width: TAB_WIDTH }]}
-              onPress={() => { setActiveTab('Phone'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-              activeOpacity={0.8}
-            >
-              <Text style={[s.tabText, activeTab === 'Phone' && s.tabTextActive]}>Phone</Text>
-            </TouchableOpacity>
+            {isRTL ? (
+              // RTL order: Phone first, Email second
+              <>
+                <TouchableOpacity
+                  style={[s.tabBtn, { width: TAB_WIDTH }]}
+                  onPress={() => { setActiveTab('Phone'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[s.tabText, activeTab === 'Phone' && s.tabTextActive]}>
+                    {t(translations.phoneTab)}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.tabBtn, { width: TAB_WIDTH }]}
+                  onPress={() => { setActiveTab('Email'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[s.tabText, activeTab === 'Email' && s.tabTextActive]}>
+                    {t(translations.emailTab)}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              // LTR order: Email first, Phone second
+              <>
+                <TouchableOpacity
+                  style={[s.tabBtn, { width: TAB_WIDTH }]}
+                  onPress={() => { setActiveTab('Email'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[s.tabText, activeTab === 'Email' && s.tabTextActive]}>
+                    {t(translations.emailTab)}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.tabBtn, { width: TAB_WIDTH }]}
+                  onPress={() => { setActiveTab('Phone'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[s.tabText, activeTab === 'Phone' && s.tabTextActive]}>
+                    {t(translations.phoneTab)}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </Animated.View>
 
           {/* Form */}
@@ -477,6 +567,8 @@ const SignIn: React.FC = () => {
                 emailFocused={emailFocused} setEmailFocused={setEmailFocused}
                 passwordFocused={passwordFocused} setPasswordFocused={setPasswordFocused}
                 router={router}
+                t={t}
+                isRTL={isRTL}
               />
             ) : (
               <PhoneForm
@@ -487,6 +579,8 @@ const SignIn: React.FC = () => {
                 passwordFocused={passwordFocused} setPasswordFocused={setPasswordFocused}
                 loading={loading} handlePhoneSignIn={handlePhoneSignIn}
                 router={router}
+                t={t}
+                isRTL={isRTL}
               />
             )}
           </View>
@@ -494,11 +588,11 @@ const SignIn: React.FC = () => {
           {/* OR divider */}
           <Animated.View entering={FadeInDown.delay(500).springify()} style={s.dividerRow}>
             <View style={s.dividerLine} />
-            <Text style={s.dividerText}>OR</Text>
+            <Text style={[s.dividerText, isRTL && s.textRTL]}>{t(translations.or)}</Text>
             <View style={s.dividerLine} />
           </Animated.View>
 
-          {/* Google */}
+          {/* Google button */}
           <Animated.View entering={FadeInDown.delay(560).springify()}>
             <TouchableOpacity
               style={s.googleBtn}
@@ -507,29 +601,105 @@ const SignIn: React.FC = () => {
               // onPress={handleGoogleSignIn}
             >
               <FontAwesome name="google" size={17} color={C.googleRed} />
-              <Text style={s.googleText}>
-                {loadingGoogle ? 'Signing in...' : 'Continue with Google'}
+              <Text style={[s.googleText, isRTL && s.textRTL]}>
+                {loadingGoogle ? t({ en: 'Signing in...', ar: 'جاري تسجيل الدخول...', fr: 'Connexion en cours...' }) : t(translations.continueWithGoogle)}
               </Text>
             </TouchableOpacity>
           </Animated.View>
 
-          {/* Sign up */}
-          <Animated.View entering={FadeInDown.delay(620).springify()} style={s.signupRow}>
-            <Text style={s.signupText}>Don't have an account? </Text>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => { router.push("/signup"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
-            >
-              <Text style={s.signupLink}>Sign Up</Text>
-            </TouchableOpacity>
+          {/* Sign up row – RTL order: text on right, link on left */}
+          <Animated.View entering={FadeInDown.delay(620).springify()}>
+            {isRTL ? (
+              <View style={s.signupRowRTL}>
+                <Text style={[s.signupText, s.textRTL]}>{t(translations.noAccount)}</Text>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => { router.push("/signup"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
+                >
+                  <Text style={[s.signupLink, s.textRTL]}>{t(translations.signUp)}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={s.signupRow}>
+                <Text style={s.signupText}>{t(translations.noAccount)}</Text>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => { router.push("/signup"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
+                >
+                  <Text style={s.signupLink}>{t(translations.signUp)}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Language Selection Modal – RTL header: title right, close left */}
+      <Modal
+        visible={showLanguageModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowLanguageModal(false)}
+      >
+        <View style={s.modalOverlay}>
+          <View style={s.modalContent}>
+            <View style={[s.modalHeader, isRTL && s.modalHeaderRTL]}>
+              {isRTL ? (
+                <>
+                  <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
+                    <Ionicons name="close" size={24} color={C.text} />
+                  </TouchableOpacity>
+                  <Text style={[s.modalTitle, s.textRTL]}>{t(translations.selectLanguage)}</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={s.modalTitle}>{t(translations.selectLanguage)}</Text>
+                  <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
+                    <Ionicons name="close" size={24} color={C.text} />
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+            <ScrollView>
+              {languages.map((language) => {
+                const langCode = language === 'English' ? 'english' : language === 'Arabic' ? 'arabic' : 'french';
+                return (
+                  <TouchableOpacity
+                    key={language}
+                    style={[
+                      s.modalOption,
+                      currentLanguage === langCode && s.modalOptionActive,
+                    ]}
+                    onPress={async () => {
+                      setCurrentLanguage(langCode);
+                      await AsyncStorage.setItem('userLanguage', langCode);
+                      setShowLanguageModal(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        s.modalOptionText,
+                        currentLanguage === langCode && s.modalOptionTextActive,
+                        isRTL && s.textRTL,
+                      ]}
+                    >
+                      {language}
+                    </Text>
+                    {currentLanguage === langCode && (
+                      <Ionicons name="checkmark" size={20} color={C.brand} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Styles ─────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   safe: {
     flex: 1,
@@ -542,12 +712,15 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Floating delivery
-  floatingBtn: {
+  // Top right buttons
+  topRightButtons: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 54 : 50,
     right: 20,
+    flexDirection: 'row',
+    gap: 12,
     zIndex: 100,
+  },
+  iconButton: {
     width: 42,
     height: 42,
     borderRadius: 21,
@@ -688,6 +861,9 @@ const s = StyleSheet.create({
     color: C.text,
     padding: 0,
   },
+  inputRTL: {
+    textAlign: 'right',
+  },
   eyeBtn: {
     paddingLeft: 10,
   },
@@ -734,6 +910,9 @@ const s = StyleSheet.create({
     alignItems: 'flex-end',
     marginBottom: 20,
     marginTop: -4,
+  },
+  forgotRowRTL: {
+    alignItems: 'flex-start',
   },
   forgotText: {
     fontSize: 13,
@@ -804,9 +983,16 @@ const s = StyleSheet.create({
     color: C.text,
   },
 
-  // Sign up
+  // Sign up (LTR)
   signupRow: {
     flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 18,
+  },
+  // Sign up (RTL) – text on right, link on left
+  signupRowRTL: {
+    flexDirection: 'row-reverse',
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 18,
@@ -819,6 +1005,63 @@ const s = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: C.brand,
+  },
+
+  // RTL text alignment helper
+  textRTL: {
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalHeaderRTL: {
+    flexDirection: 'row-reverse',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: C.text,
+  },
+  modalOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    marginBottom: 5,
+  },
+  modalOptionActive: {
+    backgroundColor: '#FFEDD5',
+  },
+  modalOptionText: {
+    fontSize: 16,
+    color: C.text,
+  },
+  modalOptionTextActive: {
+    color: C.brand,
+    fontWeight: '500',
   },
 });
 

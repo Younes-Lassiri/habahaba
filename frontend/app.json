@@ -7,12 +7,11 @@
     },
     "name": "HabaHaba Food Delivery",
     "slug": "habba-habba-food-delivery-app",
-    "version": "1.0.3",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/playStoreLogo.png",
     "scheme": "restaurantapp",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "plugins": [
       [
         "expo-image-picker",
@@ -32,11 +31,21 @@
         {
           "android": {
             "enableProguardInReleaseBuilds": false,
-            "enableMinifyInReleaseBuilds": false
+            "enableMinifyInReleaseBuilds": false,
+            "newArchEnabled": false
+          },
+          "ios": {
+            "newArchEnabled": false,
+            "useFrameworks": "static"
           }
         }
       ],
-      "expo-web-browser",
+      [
+        "expo-system-ui",
+        {
+          "edgeToEdge": true
+        }
+      ],
       [
         "expo-notifications",
         {
@@ -49,12 +58,7 @@
               "name": "New Order Alert",
               "priority": "max",
               "importance": "max",
-              "vibrationPattern": [
-                0,
-                250,
-                250,
-                250
-              ],
+              "vibrationPattern": [0, 250, 250, 250],
               "sound": "newOrderAlert.mp3"
             }
           ]
@@ -64,16 +68,14 @@
       "./withNotificationConflict.js",
       "@react-native-community/datetimepicker",
       "expo-font",
-      "expo-image"
+      "expo-web-browser"
     ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.habba.app",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "UIBackgroundModes": [
-          "audio"
-        ],
+        "UIBackgroundModes": ["audio"],
         "NSLocationWhenInUseUsageDescription": "This app needs access to your location to set your address automatically",
         "NSLocationAlwaysUsageDescription": "This app needs access to your location to provide location-based features.",
         "NSCameraUsageDescription": "This app uses the camera to take profile pictures.",
@@ -103,7 +105,6 @@
         "backgroundImage": "./assets/images/playStoreLogo.png",
         "monochromeImage": "./assets/images/playStoreLogo.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "googleServicesFile": "./google-services.json",
       "config": {
@@ -111,7 +112,7 @@
           "apiKey": "AIzaSyCx4qoEgZzG3A7VW9_gxpEWAqMSeNs_DfY"
         }
       },
-      "versionCode": 3
+      "versionCode": 1
     },
     "owner": "lassirihaba",
     "runtimeVersion": {
@@ -124,7 +125,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "174efa9e-18f0-4597-8a6a-9fcc5748acef"
+        "projectId": "ac19c389-c729-4f67-bb36-7883397a3165"
       },
       "router": {}
     }

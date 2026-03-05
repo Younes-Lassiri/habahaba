@@ -1,0 +1,10 @@
+config:
+  target: "https://haba-haba-api.ubua.cloud"
+  phases:
+    - duration: 30
+      arrivalRate: 50
+
+scenarios:
+  - flow:
+      - get:
+          url: "/api/auth/home-page-data"

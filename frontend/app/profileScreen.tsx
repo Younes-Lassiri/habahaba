@@ -168,42 +168,45 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
   };
 
   const fetchUserStats = async () => {
-    try {
-      const userData = await AsyncStorage.getItem('client');
-      const user = userData ? JSON.parse(userData) : null;
+  try {
+    // 1. Retrieve the client data and the raw token from storage
+    const userData = await AsyncStorage.getItem('client');
+    const token = await AsyncStorage.getItem('token'); // Get token from storage
 
-      if (!user || !user.id) return;
+    const user = userData ? JSON.parse(userData) : null;
 
-      const res = await axios.get(`https://haba-haba-api.ubua.cloud/api/auth/get-orders`, {
-        params: { user_id: user.id },
-      });
+    // Guard clause: if no user or token, don't attempt the call
+    if (!user || !user.id || !token) return;
 
-      const orders = res.data.orders || [];
-      const totalOrders = orders.length;
-
-      let memberSince = 'N/A';
-      if (orders.length > 0) {
-        const firstOrderDate = new Date(orders[orders.length - 1].created_at);
-        memberSince = firstOrderDate.toLocaleDateString('en-US', {
-          month: 'short',
-          year: 'numeric'
-        });
-      } else {
-        memberSince = new Date().toLocaleDateString('en-US', {
-          month: 'short',
-          year: 'numeric'
-        });
+    // 2. Make the GET request using the Authorization header
+    const res = await axios.get(`https://haba-haba-api.ubua.cloud/api/auth/profile-stats`, {
+      headers: {
+        Authorization: `Bearer ${token}` // This matches your verifyToken middleware
       }
+    });
+    
+    console.log('zap: ', res.data.stats.clientmemberSince)
 
-      setProfileStats({
-        totalOrders,
-        memberSince,
-        favorite: 'Burger Palace',
-      });
-    } catch (error) {
-      console.error('Error fetching user stats:', error);
-    }
-  };
+    // 3. Process the data returned from your getProfileStats controller
+    // Note: Based on the controller we built, the data is in res.data.stats
+    const { deliveredOrders, favorites, clientmemberSince } = res.data.stats;
+
+    // Logic for 'Member Since' (often better to get this directly from a user.created_at field)
+    const memberSince = new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      year: 'numeric'
+    });
+
+    setProfileStats({
+      totalOrders: deliveredOrders, // Use the count from the backend
+      memberSince: clientmemberSince,
+      favorite: favorites,    // Updating to use the real favorite count
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching user stats:');
+  }
+};
 
   useEffect(() => {
     fetchUserData();
@@ -394,7 +397,7 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
               </View>
               <View style={[styles.statItem, styles.statItemBorder]}>
                 <Text style={[styles.statNumber, isRTL && styles.statNumberAr]}>
-                  {profileStats.favorite ? '8' : '0'}
+                  {profileStats.favorite}
                 </Text>
                 <Text style={[styles.statLabel, isRTL && styles.statLabelAr]}>
                   {t({ en: 'Favorites', ar: 'مفضل', fr: 'Favoris' })}
@@ -402,10 +405,14 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
               </View>
               <View style={styles.statItem}>
                 <Text style={[styles.statNumber, isRTL && styles.statNumberAr]}>
-                  {client.adresses ? '2' : '0'}
+                  {new Date(profileStats.memberSince).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                  })}
                 </Text>
                 <Text style={[styles.statLabel, isRTL && styles.statLabelAr]}>
-                  {t({ en: 'Addresses', ar: 'عنوان', fr: 'Adresses' })}
+                  {t({ en: 'Since', ar: 'منذ', fr: 'Depuis' })}
                 </Text>
               </View>
             </View>
@@ -807,7 +814,7 @@ const styles = StyleSheet.create({
     borderRightColor: '#E5E7EB',
   },
   statNumber: {
-    fontSize: 20,
+    fontSize: 13,
     fontWeight: '700',
     color: '#8B4B16',
     marginBottom: 4,

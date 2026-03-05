@@ -1503,9 +1503,9 @@ export const loginWithGoogle = async (req, res) => {
       ticket = await client.verifyIdToken({
       idToken: idToken,
       audience: [
-          '925005686846-t5dj1p024m13u8lqvvbtadlema5slpjo.apps.googleusercontent.com',
-          '925005686846-c9lonjd1uq7qvi95228hdt1s6ppdlbg9.apps.googleusercontent.com', 
-          '925005686846-l7g7sb6eojdcmp793mb55fbpo7l188qt.apps.googleusercontent.com' 
+          '158740940579-ificug8hbe28n6kjjchj3ml53f29u9ka.apps.googleusercontent.com',
+          '158740940579-q6mt4k4rqqbl8qjgn35e8rfigirbc36e.apps.googleusercontent.com', 
+          '158740940579-q1ljk05bp6iddbg435jofeddo2tlsl7p.apps.googleusercontent.com' 
       ]
       });
     } catch (googleError) {
@@ -2092,5 +2092,50 @@ export const getProductNames = async (req, res) => {
   } catch (error) {
     console.error("❌ Error fetching product names:", error.message);
     res.status(500).json({ message: "Server error while fetching product names" });
+  }
+};
+
+// profile statsig/db.js";
+
+export const getProfileStats = async (req, res) => {
+  const userId = req.userId;
+
+  if (!userId) {
+    return res.status(400).json({ message: "User ID missing from request." });
+  }
+
+  try {
+    // 1. Execute queries. Using 'await' on each query inside Promise.all
+    const [ordersResult, favoritesResult, clientsResult] = await Promise.all([
+      pool.query("SELECT COUNT(*) AS count FROM orders WHERE user_id = ? AND status = ?", [userId, 'Delivered']),
+      pool.query("SELECT COUNT(*) AS count FROM favorites WHERE client_id = ?", [userId]),
+      pool.query("SELECT created_at FROM clients WHERE id = ?", [userId])
+    ]);
+
+    // 2. Extract the rows. In mysql2, the rows are in the first index [0]
+    const orderRows = ordersResult[0];
+    const favoriteRows = favoritesResult[0];
+    const clientRows = clientsResult[0];
+
+    // 3. Extract the actual values safely
+    const deliveredCount = orderRows[0]?.count || 0;
+    const favoritesCount = favoriteRows[0]?.count || 0;
+    const memberSince = clientRows.length > 0 ? clientRows[0].created_at : new Date();
+
+    return res.status(200).json({
+      success: true,
+      stats: {
+        deliveredOrders: deliveredCount,
+        favorites: favoritesCount,
+        clientmemberSince: memberSince 
+      }
+    });
+
+  } catch (error) {
+    console.error("❌ Database Error in getProfileStats:", error.message);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Internal server error fetching profile stats." 
+    });
   }
 };

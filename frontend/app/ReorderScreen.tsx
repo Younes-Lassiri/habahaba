@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -61,6 +61,20 @@ interface Order {
   updated_at?: string;
 }
 
+interface LiveProduct {
+  id: number;
+  name: string;
+  image: string;
+  promo: boolean;
+  promoValue: number;
+  price: number;
+  final_price: number;
+  has_offer: boolean;
+  discount_applied: boolean;
+  offer_info: any;
+  restaurant: string;
+}
+
 // Status mapping from backend to frontend
 const mapBackendStatus = (backendStatus: string): OrderStatus => {
   const statusMap: Record<string, OrderStatus> = {
@@ -76,8 +90,70 @@ const mapBackendStatus = (backendStatus: string): OrderStatus => {
   return statusMap[backendStatus] || 'pending';
 };
 
+// ─── Translation dictionary ─────────────────────────────────────────────────
+const translations = {
+  // Header
+  title: { en: 'Order History', ar: 'سجل الطلبات', fr: 'Historique des commandes' },
+
+  // Empty state
+  emptyTitle: { en: 'No order history', ar: 'لا يوجد سجل طلبات', fr: 'Aucun historique' },
+  emptySub: { en: 'Your completed orders will appear here', ar: 'ستظهر طلباتك المكتملة هنا', fr: 'Vos commandes terminées apparaîtront ici' },
+  browseMenu: { en: 'Browse Menu', ar: 'تصفح القائمة', fr: 'Parcourir le menu' },
+
+  // Status texts (already in getStatusConfig, but we'll define them here for completeness)
+  statusPending: { en: 'Pending', ar: 'قيد الانتظار', fr: 'En attente' },
+  statusPreparing: { en: 'Preparing', ar: 'قيد التحضير', fr: 'En préparation' },
+  statusOutForDelivery: { en: 'Out for Delivery', ar: 'خارج للتوصيل', fr: 'En livraison' },
+  statusDelivered: { en: 'Delivered', ar: 'تم التوصيل', fr: 'Livré' },
+  statusCanceled: { en: 'Canceled', ar: 'ملغي', fr: 'Annulé' },
+  statusPendingDesc: { en: 'Your order is being confirmed', ar: 'طلبك قيد التأكيد', fr: 'Votre commande est en cours de confirmation' },
+  statusPreparingDesc: { en: 'Chef is preparing your order', ar: 'الطاهي يحضر طلبك', fr: 'Le chef prépare votre commande' },
+  statusOutForDeliveryDesc: { en: 'Your order is on the way', ar: 'طلبك في الطريق', fr: 'Votre commande est en route' },
+  statusDeliveredDesc: { en: 'Order delivered successfully', ar: 'تم توصيل الطلب بنجاح', fr: 'Commande livrée avec succès' },
+  statusCanceledDesc: { en: 'Order has been canceled', ar: 'تم إلغاء الطلب', fr: 'Commande annulée' },
+
+  // Order card
+  ordered: { en: 'Ordered:', ar: 'تم الطلب:', fr: 'Commandé le :' },
+  delivered: { en: 'Delivered:', ar: 'تم التوصيل:', fr: 'Livré le :' },
+  today: { en: 'Today', ar: 'اليوم', fr: "Aujourd'hui" },
+  moreItem: { en: 'more item', ar: 'عنصر إضافي', fr: 'article supplémentaire' },
+  moreItems: { en: 'more items', ar: 'عناصر إضافية', fr: 'articles supplémentaires' },
+
+  // Action buttons
+  reorder: { en: 'Reorder', ar: 'إعادة الطلب', fr: 'Recommander' },
+  rateOrder: { en: 'Rate Order', ar: 'تقييم الطلب', fr: 'Évaluer' },
+  updateRating: { en: 'Update Rating', ar: 'تحديث التقييم', fr: 'Modifier' },
+
+  // Rating display
+  yourRating: { en: 'Your Rating', ar: 'تقييمك', fr: 'Votre évaluation' },
+  foodQuality: { en: 'Food Quality', ar: 'جودة الطعام', fr: 'Qualité des plats' },
+  deliveryService: { en: 'Delivery Service', ar: 'خدمة التوصيل', fr: 'Service de livraison' },
+  yourComment: { en: 'Your Comment', ar: 'تعليقك', fr: 'Votre commentaire' },
+
+  // Modal
+  rateExperience: { en: 'Rate Your Experience', ar: 'قيم تجربتك', fr: 'Évaluez votre expérience' },
+  orderHash: { en: 'Order #', ar: 'طلب رقم', fr: 'Commande n°' },
+  additionalComments: { en: 'Additional Comments (Optional)', ar: 'تعليقات إضافية (اختياري)', fr: 'Commentaires supplémentaires (facultatif)' },
+  placeholderComment: { en: 'Share your experience...', ar: 'شارك تجربتك...', fr: 'Partagez votre expérience...' },
+  characters: { en: 'characters', ar: 'حرف', fr: 'caractères' },
+  cancel: { en: 'Cancel', ar: 'إلغاء', fr: 'Annuler' },
+  submit: { en: 'Submit Rating', ar: 'إرسال التقييم', fr: 'Soumettre' },
+  submitting: { en: 'Submitting...', ar: 'جاري الإرسال...', fr: 'Envoi...' },
+
+  // Alerts
+  error: { en: 'Error', ar: 'خطأ', fr: 'Erreur' },
+  success: { en: 'Success', ar: 'نجاح', fr: 'Succès' },
+  fetchFailed: { en: 'Failed to fetch order history. Please try again.', ar: 'فشل تحميل سجل الطلبات. الرجاء المحاولة مرة أخرى.', fr: 'Échec du chargement de l’historique. Veuillez réessayer.' },
+  reorderSuccess: { en: 'Items added with current live prices', ar: 'تمت إضافة المنتجات بالأسعار الحالية', fr: 'Articles ajoutés avec les prix actuels' },
+  reorderError: { en: 'Error updating live prices', ar: 'حدث خطأ أثناء تحديث الأسعار', fr: 'Erreur lors de la mise à jour des prix' },
+  rateMissing: { en: 'Please rate both Food Quality and Delivery Service', ar: 'يرجى تقييم جودة الطعام وخدمة التوصيل', fr: 'Veuillez évaluer la qualité des plats et le service de livraison' },
+  userNotFound: { en: 'User not found. Please log in again.', ar: 'لم يتم العثور على المستخدم. الرجاء تسجيل الدخول مرة أخرى.', fr: 'Utilisateur introuvable. Veuillez vous reconnecter.' },
+  thankYou: { en: 'Thank you for your feedback!', ar: 'شكرًا لك على ملاحظاتك!', fr: 'Merci pour votre retour !' },
+  submitFailed: { en: 'Failed to submit rating. Please try again.', ar: 'فشل إرسال التقييم. الرجاء المحاولة مرة أخرى.', fr: 'Échec de l’envoi. Veuillez réessayer.' },
+};
+
 export default function ReorderScreen() {
-  const { userLanguage } = useLocalSearchParams();
+  const { userLanguage: paramLanguage } = useLocalSearchParams<{ userLanguage?: string }>();
   const dispatch = useDispatch();
   const insets = useSafeAreaInsets();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -92,8 +168,138 @@ export default function ReorderScreen() {
   const [restaurant_name, setRestaurant_name] = useState<string>('');
   const [restaurant_phone, setRestaurant_phone] = useState<string>('');
 
-  // Determine if language is Arabic
-  const isRTL = userLanguage === 'arabic';
+  // ── Language state ───────────────────────────────────────────────────────
+  const [currentLanguage, setCurrentLanguage] = useState<'english' | 'arabic' | 'french'>('english');
+  const isRTL = currentLanguage === 'arabic';
+
+  // Load saved language on mount
+  useEffect(() => {
+    const loadLanguage = async () => {
+      // If language passed as param, use it; otherwise load from storage
+      if (paramLanguage && (paramLanguage === 'english' || paramLanguage === 'arabic' || paramLanguage === 'french')) {
+        setCurrentLanguage(paramLanguage);
+      } else {
+        const storedLang = await AsyncStorage.getItem('userLanguage');
+        if (storedLang && (storedLang === 'english' || storedLang === 'arabic' || storedLang === 'french')) {
+          setCurrentLanguage(storedLang);
+        }
+      }
+    };
+    loadLanguage();
+  }, [paramLanguage]);
+
+  // Translation helper
+  const t = (key: keyof typeof translations): string => {
+    const value = translations[key];
+    if (currentLanguage === 'arabic') return value.ar;
+    if (currentLanguage === 'french') return value.fr;
+    return value.en;
+  };
+
+  // Status configuration with translations
+  const getStatusConfig = useCallback((status: OrderStatus) => {
+    const baseConfig: Record<string, {
+      color: string;
+      icon: string;
+      progress: number;
+    }> = {
+      pending: {
+        color: Colors.gray[400],
+        icon: 'time-outline',
+        progress: 10,
+      },
+      preparing: {
+        color: Colors.warning,
+        icon: 'restaurant-outline',
+        progress: 40,
+      },
+      outForDelivery: {
+        color: '#2196F3',
+        icon: 'bicycle-outline',
+        progress: 75,
+      },
+      delivered: {
+        color: Colors.success,
+        icon: 'checkmark-circle-outline',
+        progress: 100,
+      },
+      canceled: {
+        color: Colors.error,
+        icon: 'close-circle-outline',
+        progress: 0,
+      },
+    };
+
+    const statusKey = status as keyof typeof baseConfig;
+    const config = baseConfig[statusKey] || baseConfig.pending;
+
+    let text = '';
+    let description = '';
+    switch (status) {
+      case 'pending':
+        text = t('statusPending');
+        description = t('statusPendingDesc');
+        break;
+      case 'preparing':
+        text = t('statusPreparing');
+        description = t('statusPreparingDesc');
+        break;
+      case 'outForDelivery':
+        text = t('statusOutForDelivery');
+        description = t('statusOutForDeliveryDesc');
+        break;
+      case 'delivered':
+        text = t('statusDelivered');
+        description = t('statusDeliveredDesc');
+        break;
+      case 'canceled':
+        text = t('statusCanceled');
+        description = t('statusCanceledDesc');
+        break;
+    }
+
+    return { ...config, text, description };
+  }, [t]);
+
+  // Format date with language support
+  const formatOrderDate = useCallback((orderDate: Date, isToday: boolean) => {
+    const time = orderDate.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+
+    if (isToday) {
+      return `${t('today')}، ${time}`;
+    } else {
+      const dayName = isRTL 
+        ? getArabicDayName(orderDate.getDay())
+        : orderDate.toLocaleDateString(currentLanguage === 'french' ? 'fr-FR' : 'en-US', { weekday: 'long' });
+      return `${dayName}، ${time}`;
+    }
+  }, [isRTL, currentLanguage, t]);
+
+  const getArabicDayName = (dayIndex: number): string => {
+    const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+    return days[dayIndex];
+  };
+
+  const formatArabicDateTime = (date: Date): string => {
+    const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+    const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+    
+    const dayName = days[date.getDay()];
+    const day = date.getDate();
+    const month = months[date.getMonth()];
+    const year = date.getFullYear();
+    const time = date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+    
+    return `${dayName}، ${day} ${month} ${year}، ${time}`;
+  };
 
   const fetchOrders = async (showLoading = true) => {
     try {
@@ -118,28 +324,6 @@ export default function ReorderScreen() {
           const now = new Date();
           const isToday = orderDate.toDateString() === now.toDateString();
 
-          const formatOrderDate = () => {
-            const time = orderDate.toLocaleTimeString('en-US', {
-              hour: 'numeric',
-              minute: '2-digit',
-              hour12: true
-            });
-
-            if (isToday) {
-              return isRTL ? `اليوم، ${time}` : `Today, ${time}`;
-            } else {
-              const dayName = isRTL 
-                ? getArabicDayName(orderDate.getDay())
-                : orderDate.toLocaleDateString('en-US', { weekday: 'long' });
-              return `${dayName}، ${time}`;
-            }
-          };
-
-          const getArabicDayName = (dayIndex: number): string => {
-            const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-            return days[dayIndex];
-          };
-
           const mappedStatus = mapBackendStatus(order.status || 'Pending');
 
           return {
@@ -154,11 +338,11 @@ export default function ReorderScreen() {
               product_id: item.product_id,
               product_image: item.product_image,
             })),
-            orderDate: formatOrderDate(),
+            orderDate: formatOrderDate(orderDate, isToday),
             deliveryTime: order.delivered_at
               ? isRTL 
                 ? formatArabicDateTime(new Date(order.delivered_at))
-                : new Date(order.delivered_at).toLocaleString('en-US', {
+                : new Date(order.delivered_at).toLocaleString(currentLanguage === 'french' ? 'fr-FR' : 'en-US', {
                   weekday: 'long',
                   year: 'numeric',
                   month: 'long',
@@ -186,76 +370,53 @@ export default function ReorderScreen() {
     } catch (err: any) {
       console.error('Fetch Orders Error:', err.response?.data || err.message);
       if (showLoading) {
-        Alert.alert(
-          isRTL ? 'خطأ' : 'Error',
-          isRTL ? 'فشل تحميل سجل الطلبات. الرجاء المحاولة مرة أخرى.' : 'Failed to fetch order history. Please try again.'
-        );
+        Alert.alert(t('error'), t('fetchFailed'));
       }
     } finally {
       if (showLoading) setLoading(false);
     }
   };
 
-  const formatArabicDateTime = (date: Date): string => {
-    const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-    const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-    
-    const dayName = days[date.getDay()];
-    const day = date.getDate();
-    const month = months[date.getMonth()];
-    const year = date.getFullYear();
-    const time = date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    });
-    
-    return `${dayName}، ${day} ${month} ${year}، ${time}`;
-  };
-
   useEffect(() => {
     fetchOrders();
   }, []);
 
-  const handleReorder = (order: Order) => {
-    // Add all items from the order to the cart
-    order.items.forEach((item) => {
-      if (item.product_id) {
-        // Build image URL if product_image exists
-        let imageUrl = item.product_image || '';
-        if (imageUrl && !imageUrl.startsWith('http') && !imageUrl.startsWith('file://')) {
-          imageUrl = `${imageUrl}`;
-        }
-
-        // Use order's restaurant name as fallback if restaurant_name is undefined
-        const restaurantName = restaurant_name || order.restaurant || 'Restaurant';
-
-        dispatch(
-          addItem({
-            id: item.product_id,
-            name: item.name,
-            description: '', // Provide empty string for description
-            price: item.price || 0,
-            quantity: item.quantity,
-            image: imageUrl,
-            restaurant: restaurantName,
-            discount_applied: false,
-            original_price: item.price || 0,
-            offer_info: null,
-            specialInstructions: '',
-            showSpecialInstructions: false
-          })
-        );
+  const handleReorder = useCallback(async (order: Order) => {
+    const { items, restaurant: orderRest } = order;
+    if (!items?.length) return;
+    try {
+      const userData = await AsyncStorage.getItem('client');
+      const user = JSON.parse(userData || '{}');
+      const token = await AsyncStorage.getItem('token');
+      const response = await axios.post(
+        'https://haba-haba-api.ubua.cloud/api/auth/products/check-live-status',
+        { productIds: items.map(i => i.product_id), userId: user.id },
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+      if (response.data.success) {
+        const liveProducts: LiveProduct[] = response.data.products;
+        items.forEach((historyItem) => {
+          const live = liveProducts.find((p: LiveProduct) => p.id === historyItem.product_id);
+          if (!live) return;
+          dispatch(addItem({
+            id: live.id, name: live.name, description: '',
+            price: live.promo && live.promoValue
+              ? Math.max((live.price || 0) - (live.price || 0) * (live.promoValue / 100), 0)
+              : live.discount_applied ? live.final_price : live.price,
+            quantity: historyItem.quantity, image: live.image,
+            restaurant: restaurant_name || live.restaurant || 'Restaurant',
+            discount_applied: live.discount_applied, original_price: live.price,
+            offer_info: live.discount_applied ? live.offer_info : null,
+            specialInstructions: '', showSpecialInstructions: false
+          }));
+        });
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert(t('success'), t('reorderSuccess'));
       }
-    });
-
-    // Show success feedback
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert(
-      isRTL ? 'نجاح' : 'Success',
-      isRTL ? 'تمت إضافة العناصر إلى السلة!' : 'Items added to cart!'
-    );
-  };
+    } catch (error) {
+      Alert.alert(t('error'), t('reorderError'));
+    }
+  }, [dispatch, restaurant_name, t]);
 
   const openRatingModal = (order: Order) => {
     setSelectedOrder(order);
@@ -281,30 +442,22 @@ export default function ReorderScreen() {
 
   const handleSubmitRating = async () => {
     if (!selectedOrder || foodRating === 0 || deliveryRating === 0) {
-      Alert.alert(
-        isRTL ? 'خطأ' : 'Error',
-        isRTL ? 'يرجى تقييم جودة الطعام وخدمة التوصيل' : 'Please rate both Food Quality and Delivery Service'
-      );
+      Alert.alert(t('error'), t('rateMissing'));
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      // Get user data
       const userData = await AsyncStorage.getItem('client');
       const user = userData ? JSON.parse(userData) : null;
 
       if (!user || !user.id) {
-        Alert.alert(
-          isRTL ? 'خطأ' : 'Error',
-          isRTL ? 'لم يتم العثور على المستخدم. الرجاء تسجيل الدخول مرة أخرى.' : 'User not found. Please log in again.'
-        );
+        Alert.alert(t('error'), t('userNotFound'));
         setIsSubmitting(false);
         return;
       }
 
-      // Submit rating to backend
       const response = await axios.post(
         'https://haba-haba-api.ubua.cloud/api/auth/submit-rating',
         {
@@ -319,26 +472,14 @@ export default function ReorderScreen() {
       if (response.data.success) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         closeRatingModal();
-
-        // Refresh orders to get updated rating from backend
         await fetchOrders(false);
-
-        Alert.alert(
-          isRTL ? 'نجاح' : 'Success',
-          isRTL ? 'شكرًا لك على ملاحظاتك!' : 'Thank you for your feedback!'
-        );
+        Alert.alert(t('success'), t('thankYou'));
       } else {
-        Alert.alert(
-          isRTL ? 'خطأ' : 'Error',
-          response.data.message || (isRTL ? 'فشل إرسال التقييم' : 'Failed to submit rating')
-        );
+        Alert.alert(t('error'), response.data.message || t('submitFailed'));
       }
     } catch (error: any) {
       console.error('Error submitting rating:', error);
-      Alert.alert(
-        isRTL ? 'خطأ' : 'Error',
-        error.response?.data?.message || (isRTL ? 'فشل إرسال التقييم. الرجاء المحاولة مرة أخرى.' : 'Failed to submit rating. Please try again.')
-      );
+      Alert.alert(t('error'), error.response?.data?.message || t('submitFailed'));
     } finally {
       setIsSubmitting(false);
     }
@@ -375,102 +516,9 @@ export default function ReorderScreen() {
     );
   };
 
-  const getStatusConfig = (status: OrderStatus) => {
-    const STATUS_CONFIG_EN: Record<string, {
-      text: string;
-      color: string;
-      icon: string;
-      description: string;
-      progress: number;
-    }> = {
-      pending: {
-        text: 'Pending',
-        color: Colors.gray[400],
-        icon: 'time-outline',
-        description: 'Your order is being confirmed',
-        progress: 10,
-      },
-      preparing: {
-        text: 'Preparing',
-        color: Colors.warning,
-        icon: 'restaurant-outline',
-        description: 'Chef is preparing your order',
-        progress: 40,
-      },
-      outForDelivery: {
-        text: 'Out for Delivery',
-        color: '#2196F3',
-        icon: 'bicycle-outline',
-        description: 'Your order is on the way',
-        progress: 75,
-      },
-      delivered: {
-        text: 'Delivered',
-        color: Colors.success,
-        icon: 'checkmark-circle-outline',
-        description: 'Order delivered successfully',
-        progress: 100,
-      },
-      canceled: {
-        text: 'Canceled',
-        color: Colors.error,
-        icon: 'close-circle-outline',
-        description: 'Order has been canceled',
-        progress: 0,
-      },
-    };
-
-    const STATUS_CONFIG_AR: Record<string, {
-      text: string;
-      color: string;
-      icon: string;
-      description: string;
-      progress: number;
-    }> = {
-      pending: {
-        text: 'قيد الانتظار',
-        color: Colors.gray[400],
-        icon: 'time-outline',
-        description: 'طلبك قيد التأكيد',
-        progress: 10,
-      },
-      preparing: {
-        text: 'قيد التحضير',
-        color: Colors.warning,
-        icon: 'restaurant-outline',
-        description: 'الطاهي يحضر طلبك',
-        progress: 40,
-      },
-      outForDelivery: {
-        text: 'خارج للتوصيل',
-        color: '#2196F3',
-        icon: 'bicycle-outline',
-        description: 'طلبك في الطريق',
-        progress: 75,
-      },
-      delivered: {
-        text: 'تم التوصيل',
-        color: Colors.success,
-        icon: 'checkmark-circle-outline',
-        description: 'تم توصيل الطلب بنجاح',
-        progress: 100,
-      },
-      canceled: {
-        text: 'ملغي',
-        color: Colors.error,
-        icon: 'close-circle-outline',
-        description: 'تم إلغاء الطلب',
-        progress: 0,
-      },
-    };
-
-    return isRTL ? STATUS_CONFIG_AR[status] || STATUS_CONFIG_AR.pending : 
-                    STATUS_CONFIG_EN[status] || STATUS_CONFIG_EN.pending;
-  };
-
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Fixed Header - Back arrow on left, title aligned right in Arabic */}
+      {/* Fixed Header - Back arrow on left, title centered */}
       <View style={[styles.header, isRTL && styles.headerAr]}>
         <TouchableOpacity
           style={styles.backButton}
@@ -479,7 +527,7 @@ export default function ReorderScreen() {
           <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
         </TouchableOpacity>
         <Text style={[styles.title, isRTL && styles.titleAr]}>
-          {isRTL ? 'سجل الطلبات' : 'Order History'}
+          {t('title')}
         </Text>
         <View style={[styles.headerRight, isRTL && styles.headerRightAr]} />
       </View>
@@ -516,17 +564,17 @@ export default function ReorderScreen() {
                 color={Colors.primary}
               />
               <Text style={[styles.emptyStateText, isRTL && styles.emptyStateTextAr]}>
-                {isRTL ? 'لا يوجد سجل طلبات' : 'No order history'}
+                {t('emptyTitle')}
               </Text>
               <Text style={[styles.emptyStateSubtext, isRTL && styles.emptyStateSubtextAr]}>
-                {isRTL ? 'ستظهر طلباتك المكتملة هنا' : 'Your completed orders will appear here'}
+                {t('emptySub')}
               </Text>
               <TouchableOpacity
                 style={styles.emptyStateButton}
                 onPress={() => router.push('/')}
               >
                 <Text style={styles.emptyStateButtonText}>
-                  {isRTL ? 'تصفح القائمة' : 'Browse Menu'}
+                  {t('browseMenu')}
                 </Text>
               </TouchableOpacity>
             </LinearGradient>
@@ -575,7 +623,7 @@ export default function ReorderScreen() {
                   ))}
                   {order.items.length > 3 && (
                     <Text style={[styles.orderItemMore, isRTL && styles.orderItemMoreAr]}>
-                      +{order.items.length - 3} {isRTL ? 'عنصر إضافي' : 'more item'}{order.items.length - 3 > 1 ? (isRTL ? '' : 's') : ''}
+                      +{order.items.length - 3} {order.items.length - 3 > 1 ? t('moreItems') : t('moreItem')}
                     </Text>
                   )}
                 </View>
@@ -584,11 +632,11 @@ export default function ReorderScreen() {
                 <View style={[styles.orderFooter, isRTL && styles.orderFooterAr]}>
                   <View style={isRTL && styles.orderFooterTextContainerAr}>
                     <Text style={[styles.orderDate, isRTL && styles.orderDateAr]}>
-                      {isRTL ? 'تم الطلب:' : 'Ordered:'} {order.orderDate}
+                      {t('ordered')} {order.orderDate}
                     </Text>
                     {order.deliveryTime && (
                       <Text style={[styles.orderDelivered, isRTL && styles.orderDeliveredAr]}>
-                        {isRTL ? 'تم التوصيل:' : 'Delivered:'} {order.deliveryTime}
+                        {t('delivered')} {order.deliveryTime}
                       </Text>
                     )}
                   </View>
@@ -607,7 +655,7 @@ export default function ReorderScreen() {
                     }}
                   >
                     <Text style={[styles.actionButtonText, isRTL && styles.actionButtonTextAr]}>
-                      {isRTL ? 'إعادة الطلب' : 'Reorder'}
+                      {t('reorder')}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -620,7 +668,7 @@ export default function ReorderScreen() {
                       color={Colors.primary}
                     />
                     <Text style={[styles.actionButtonText, isRTL && styles.actionButtonTextAr]}>
-                      {order.rating ? (isRTL ? 'تحديث التقييم' : 'Update Rating') : (isRTL ? 'تقييم الطلب' : 'Rate Order')}
+                      {order.rating ? t('updateRating') : t('rateOrder')}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -638,7 +686,7 @@ export default function ReorderScreen() {
                         <Ionicons name="star" size={20} color={Colors.warning} />
                       </View>
                       <Text style={[styles.ratingDisplayTitle, isRTL && styles.ratingDisplayTitleAr]}>
-                        {isRTL ? 'تقييمك' : 'Your Rating'}
+                        {t('yourRating')}
                       </Text>
                     </View>
 
@@ -647,7 +695,7 @@ export default function ReorderScreen() {
                         <View style={[styles.ratingDisplayItemHeader, isRTL && styles.ratingDisplayItemHeaderAr]}>
                           <Ionicons name="restaurant" size={18} color={Colors.primary} />
                           <Text style={[styles.ratingDisplayLabel, isRTL && styles.ratingDisplayLabelAr]}>
-                            {isRTL ? 'جودة الطعام' : 'Food Quality'}
+                            {t('foodQuality')}
                           </Text>
                         </View>
                         <View style={[styles.ratingDisplayStars, isRTL && styles.ratingDisplayStarsAr]}>
@@ -664,7 +712,7 @@ export default function ReorderScreen() {
                         <View style={[styles.ratingDisplayItemHeader, isRTL && styles.ratingDisplayItemHeaderAr]}>
                           <Ionicons name="bicycle" size={18} color={Colors.primary} />
                           <Text style={[styles.ratingDisplayLabel, isRTL && styles.ratingDisplayLabelAr]}>
-                            {isRTL ? 'خدمة التوصيل' : 'Delivery Service'}
+                            {t('deliveryService')}
                           </Text>
                         </View>
                         <View style={[styles.ratingDisplayStars, isRTL && styles.ratingDisplayStarsAr]}>
@@ -681,7 +729,7 @@ export default function ReorderScreen() {
                         <View style={[styles.ratingCommentHeader, isRTL && styles.ratingCommentHeaderAr]}>
                           <Ionicons name="chatbubble-outline" size={16} color={Colors.text.secondary} />
                           <Text style={[styles.ratingCommentLabel, isRTL && styles.ratingCommentLabelAr]}>
-                            {isRTL ? 'تعليقك' : 'Your Comment'}
+                            {t('yourComment')}
                           </Text>
                         </View>
                         <Text style={[styles.ratingComment, isRTL && styles.ratingCommentAr]}>
@@ -717,11 +765,11 @@ export default function ReorderScreen() {
                       <Ionicons name="star" size={32} color={Colors.primary} />
                     </View>
                     <Text style={[styles.modalTitle, isRTL && styles.modalTitleAr]}>
-                      {isRTL ? 'قيم تجربتك' : 'Rate Your Experience'}
+                      {t('rateExperience')}
                     </Text>
                     {selectedOrder && (
                       <Text style={[styles.modalSubtitle, isRTL && styles.modalSubtitleAr]}>
-                        {isRTL ? 'طلب رقم' : 'Order #'}{selectedOrder.orderNumber}
+                        {t('orderHash')}{selectedOrder.orderNumber}
                       </Text>
                     )}
                   </View>
@@ -732,25 +780,25 @@ export default function ReorderScreen() {
                   >
                     <View style={styles.ratingSection}>
                       <Text style={[styles.ratingSectionTitle, isRTL && styles.ratingSectionTitleAr]}>
-                        {isRTL ? 'جودة الطعام' : 'Food Quality'}
+                        {t('foodQuality')}
                       </Text>
                       {renderStars(foodRating, setFoodRating, 32)}
                     </View>
 
                     <View style={styles.ratingSection}>
                       <Text style={[styles.ratingSectionTitle, isRTL && styles.ratingSectionTitleAr]}>
-                        {isRTL ? 'خدمة التوصيل' : 'Delivery Service'}
+                        {t('deliveryService')}
                       </Text>
                       {renderStars(deliveryRating, setDeliveryRating, 32)}
                     </View>
 
                     <View style={styles.commentSection}>
                       <Text style={[styles.commentLabel, isRTL && styles.commentLabelAr]}>
-                        {isRTL ? 'تعليقات إضافية (اختياري)' : 'Additional Comments (Optional)'}
+                        {t('additionalComments')}
                       </Text>
                       <TextInput
                         style={[styles.commentInput, isRTL && styles.commentInputAr]}
-                        placeholder={isRTL ? "شارك تجربتك..." : "Share your experience..."}
+                        placeholder={t('placeholderComment')}
                         placeholderTextColor={Colors.text.secondary}
                         value={comment}
                         onChangeText={setComment}
@@ -760,7 +808,7 @@ export default function ReorderScreen() {
                         textAlign={isRTL ? 'right' : 'left'}
                       />
                       <Text style={[styles.commentCounter, isRTL && styles.commentCounterAr]}>
-                        {comment.length}/200 {isRTL ? 'حرف' : 'characters'}
+                        {comment.length}/200 {t('characters')}
                       </Text>
                     </View>
                   </ScrollView>
@@ -772,7 +820,7 @@ export default function ReorderScreen() {
                       disabled={isSubmitting}
                     >
                       <Text style={[styles.modalCancelText, isRTL && styles.modalCancelTextAr]}>
-                        {isRTL ? 'إلغاء' : 'Cancel'}
+                        {t('cancel')}
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -785,7 +833,7 @@ export default function ReorderScreen() {
                       disabled={foodRating === 0 || deliveryRating === 0 || isSubmitting}
                     >
                       <Text style={[styles.modalSubmitText, isRTL && styles.modalSubmitTextAr]}>
-                        {isSubmitting ? (isRTL ? 'جاري الإرسال...' : 'Submitting...') : (isRTL ? 'إرسال التقييم' : 'Submit Rating')}
+                        {isSubmitting ? t('submitting') : t('submit')}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -870,9 +918,7 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  orderCardAr: {
-    // Optional: Add specific RTL styles for order card
-  },
+  orderCardAr: {},
   orderHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',

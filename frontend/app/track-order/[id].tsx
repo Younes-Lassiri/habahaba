@@ -11,6 +11,7 @@ import {
   Image,
   Linking,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,8 +22,14 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Circle, Path, Svg } from 'react-native-svg';
 
+const ANDROID_API_KEY = 'AIzaSyABM4rY2G3rijHtFVgLnBNpWhGETKYn3BA';
+const IOS_API_KEY = 'AIzaSyCzxfUcrGi6V6D_cEXrmmB4sqTdl_8KL6Y';
+
 // Your Google Maps API Key
-const GOOGLE_API_KEY = 'AIzaSyCx4qoEgZzG3A7VW9_gxpEWAqMSeNs_DfY';
+const GOOGLE_API_KEY = Platform.select({
+  android: ANDROID_API_KEY,
+  ios: IOS_API_KEY,
+});
 
 // ─── Brand Colors ───────────────────────────────────────────────────────────
 const Brand = {
@@ -996,6 +1003,10 @@ export default function TrackOrderScreen() {
                   <Text style={styles.summaryValue}>{trackingData.subtotal} MAD</Text>
                 </View>
               )}
+              <View style={[styles.summaryRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                  <Text style={[styles.summaryLabel, { color: Brand.success }]}>{t.deliveryFee}</Text>
+                  <Text style={[styles.summaryValue, { color: Brand.success }]}>+{trackingData.deliveryFee} MAD</Text>
+                </View>
               {trackingData.discount > 0 && (
                 <View style={[styles.summaryRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
                   <Text style={[styles.summaryLabel, { color: Brand.success }]}>{t.discount}</Text>

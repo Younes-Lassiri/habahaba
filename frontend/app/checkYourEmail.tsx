@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   Platform,
   ScrollView,
   StatusBar,
+  Modal,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import axios from "axios";
@@ -37,6 +38,29 @@ const C = {
   requireBorder: '#F0DCC8',
 };
 
+// ─── Translation dictionary ─────────────────────────────────────────────────
+const translations = {
+  headlineTitle:   { en: 'Reset Password', ar: 'إعادة تعيين كلمة المرور', fr: 'Réinitialiser le mot de passe' },
+  headlineSub:     { en: 'Enter the code sent to {{email}} and choose a new password', ar: 'أدخل الرمز المرسل إلى {{email}} واختر كلمة مرور جديدة', fr: 'Entrez le code envoyé à {{email}} et choisissez un nouveau mot de passe' },
+  codeLabel:       { en: 'Verification Code', ar: 'رمز التحقق', fr: 'Code de vérification' },
+  codePlaceholder: { en: 'Enter 6-digit code', ar: 'أدخل الرمز المكون من 6 أرقام', fr: 'Entrez le code à 6 chiffres' },
+  passwordLabel:   { en: 'New Password', ar: 'كلمة المرور الجديدة', fr: 'Nouveau mot de passe' },
+  passwordPlaceholder: { en: 'Enter new password', ar: 'أدخل كلمة المرور الجديدة', fr: 'Entrez le nouveau mot de passe' },
+  confirmLabel:    { en: 'Confirm Password', ar: 'تأكيد كلمة المرور', fr: 'Confirmez le mot de passe' },
+  confirmPlaceholder: { en: 'Re-enter new password', ar: 'أعد إدخال كلمة المرور الجديدة', fr: 'Répétez le nouveau mot de passe' },
+  cta:             { en: 'Reset Password', ar: 'إعادة تعيين كلمة المرور', fr: 'Réinitialiser' },
+  stepRequest:     { en: 'Request', ar: 'طلب', fr: 'Demande' },
+  stepVerify:      { en: 'Verify', ar: 'تحقق', fr: 'Vérifier' },
+  stepReset:       { en: 'Reset', ar: 'إعادة تعيين', fr: 'Réinitialiser' },
+  selectLanguage:  { en: 'Select Language', ar: 'اختر اللغة', fr: 'Choisir la langue' },
+  errorCodeRequired: { en: 'Verification code is required', ar: 'رمز التحقق مطلوب', fr: 'Le code de vérification est requis' },
+  errorPasswordRequired: { en: 'Password is required', ar: 'كلمة المرور مطلوبة', fr: 'Le mot de passe est requis' },
+  errorConfirmRequired: { en: 'Confirm password is required', ar: 'تأكيد كلمة المرور مطلوب', fr: 'La confirmation du mot de passe est requise' },
+  errorPasswordMismatch: { en: 'Passwords do not match', ar: 'كلمات المرور غير متطابقة', fr: 'Les mots de passe ne correspondent pas' },
+  errorTitle:      { en: 'Error', ar: 'خطأ', fr: 'Erreur' },
+  errorGeneric:    { en: 'Something went wrong', ar: 'حدث خطأ ما', fr: 'Quelque chose s\'est mal passé' },
+};
+
 const EnterCodeResetPassword = () => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -58,16 +82,46 @@ const EnterCodeResetPassword = () => {
   const [passwordFocused, setPasswordFocused]     = useState(false);
   const [confirmPasswordFocused, setConfirmPasswordFocused] = useState(false);
 
-  // ── Original logic — UNCHANGED ───────────────────────────────────────────
+  // ── Language state ───────────────────────────────────────────────────────
+  const [currentLanguage, setCurrentLanguage] = useState<'english' | 'arabic' | 'french'>('english');
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const languages = ['English', 'Arabic', 'French'];
+  const isRTL = currentLanguage === 'arabic';
+
+  // Load saved language on mount
+  useEffect(() => {
+    const loadLanguage = async () => {
+      const storedLang = await AsyncStorage.getItem('userLanguage');
+      if (storedLang && (storedLang === 'english' || storedLang === 'arabic' || storedLang === 'french')) {
+        setCurrentLanguage(storedLang);
+      }
+    };
+    loadLanguage();
+  }, []);
+
+  // Translation helper
+  const t = (key: { en: string; ar: string; fr: string }): string => {
+    if (currentLanguage === 'arabic') return key.ar;
+    if (currentLanguage === 'french') return key.fr;
+    return key.en;
+  };
+
+  // Helper to interpolate email into headlineSub
+  const getHeadlineSub = () => {
+    const template = t(translations.headlineSub);
+    return template.replace('{{email}}', email as string);
+  };
+
+  // ── Original logic — UNCHANGED, but with translated error messages ───────
   const handleResetPassword = async () => {
     const newErrors: { code?: string; password?: string; confirmPassword?: string } = {};
 
-    if (!code) newErrors.code = "Verification code is required";
-    if (!password.trim()) newErrors.password = "Password is required";
-    if (!confirmPassword.trim()) newErrors.confirmPassword = "Confirm password is required";
+    if (!code) newErrors.code = t(translations.errorCodeRequired);
+    if (!password.trim()) newErrors.password = t(translations.errorPasswordRequired);
+    if (!confirmPassword.trim()) newErrors.confirmPassword = t(translations.errorConfirmRequired);
 
     if (password && confirmPassword && password !== confirmPassword) {
-      newErrors.confirmPassword = "Passwords do not match";
+      newErrors.confirmPassword = t(translations.errorPasswordMismatch);
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -101,23 +155,33 @@ const EnterCodeResetPassword = () => {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         router.push("/");
       } else {
-        Alert.alert("Error", response.data.message || "Failed to reset password");
+        Alert.alert(t(translations.errorTitle), response.data.message || t(translations.errorGeneric));
       }
     } catch (error: any) {
       setLoading(false);
       console.log(error);
       if (error.response?.data?.message) {
-        Alert.alert("Error", error.response.data.message);
+        Alert.alert(t(translations.errorTitle), error.response.data.message);
       } else {
-        Alert.alert("Error", "Something went wrong");
+        Alert.alert(t(translations.errorTitle), t(translations.errorGeneric));
       }
     }
   };
-  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+
+      {/* Top right language icon */}
+      <View style={[s.topRightButtons, { top: Platform.OS === 'ios' ? 54 : 50 }]}>
+        <TouchableOpacity
+          style={s.iconButton}
+          onPress={() => setShowLanguageModal(true)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="language-outline" size={22} color={C.text} />
+        </TouchableOpacity>
+      </View>
 
       {/* ── Back arrow — pinned at top, never hidden by status bar ── */}
       <Animated.View
@@ -153,36 +217,68 @@ const EnterCodeResetPassword = () => {
 
           {/* ── Headline ── */}
           <Animated.View entering={FadeInDown.delay(130).springify()} style={s.headline}>
-            <Text style={s.headlineTitle}>Reset Password</Text>
-            <Text style={s.headlineSub}>
-              Enter the code sent to{' '}
-              <Text style={s.emailHighlight}>{email}</Text>
-              {' '}and choose a new password
+            <Text style={[s.headlineTitle, isRTL && s.textRTL]}>{t(translations.headlineTitle)}</Text>
+            <Text style={[s.headlineSub, isRTL && s.textRTL]}>
+              {getHeadlineSub().split(email as string).map((part, index) => (
+                <Text key={index}>
+                  {part}
+                  {index === 0 && <Text style={s.emailHighlight}>{email}</Text>}
+                </Text>
+              ))}
             </Text>
           </Animated.View>
 
-          {/* ── Step Indicator — step 2 active ── */}
-          <Animated.View entering={FadeInDown.delay(170).springify()} style={s.stepRow}>
-            <View style={s.stepItem}>
-              <View style={[s.stepDot, s.stepDotDone]}>
-                <Ionicons name="checkmark" size={14} color={C.white} />
-              </View>
-              <Text style={[s.stepLabel, s.stepLabelDone]}>Request</Text>
-            </View>
-            <View style={[s.stepLine, s.stepLineDone]} />
-            <View style={s.stepItem}>
-              <View style={[s.stepDot, s.stepDotActive]}>
-                <Text style={s.stepNumActive}>2</Text>
-              </View>
-              <Text style={[s.stepLabel, s.stepLabelActive]}>Verify</Text>
-            </View>
-            <View style={s.stepLine} />
-            <View style={s.stepItem}>
-              <View style={s.stepDot}>
-                <Text style={s.stepNum}>3</Text>
-              </View>
-              <Text style={s.stepLabel}>Reset</Text>
-            </View>
+          {/* ── Step Indicator — reversed in RTL ── */}
+          <Animated.View entering={FadeInDown.delay(170).springify()} style={[s.stepRow, isRTL && s.stepRowRTL]}>
+            {isRTL ? (
+              // RTL order: Reset (3), Verify (2), Request (1)
+              <>
+                <View style={s.stepItem}>
+                  <View style={[s.stepDot]}>
+                    <Text style={s.stepNum}>3</Text>
+                  </View>
+                  <Text style={[s.stepLabel, isRTL && s.textRTL]}>{t(translations.stepReset)}</Text>
+                </View>
+                <View style={s.stepLine} />
+                <View style={s.stepItem}>
+                  <View style={[s.stepDot, s.stepDotActive]}>
+                    <Text style={s.stepNumActive}>2</Text>
+                  </View>
+                  <Text style={[s.stepLabel, s.stepLabelActive, isRTL && s.textRTL]}>{t(translations.stepVerify)}</Text>
+                </View>
+                <View style={[s.stepLine, s.stepLineDone]} />
+                <View style={s.stepItem}>
+                  <View style={[s.stepDot, s.stepDotDone]}>
+                    <Ionicons name="checkmark" size={14} color={C.white} />
+                  </View>
+                  <Text style={[s.stepLabel, s.stepLabelDone, isRTL && s.textRTL]}>{t(translations.stepRequest)}</Text>
+                </View>
+              </>
+            ) : (
+              // LTR order: Request (1), Verify (2), Reset (3)
+              <>
+                <View style={s.stepItem}>
+                  <View style={[s.stepDot, s.stepDotDone]}>
+                    <Ionicons name="checkmark" size={14} color={C.white} />
+                  </View>
+                  <Text style={[s.stepLabel, s.stepLabelDone]}>{t(translations.stepRequest)}</Text>
+                </View>
+                <View style={[s.stepLine, s.stepLineDone]} />
+                <View style={s.stepItem}>
+                  <View style={[s.stepDot, s.stepDotActive]}>
+                    <Text style={s.stepNumActive}>2</Text>
+                  </View>
+                  <Text style={[s.stepLabel, s.stepLabelActive]}>{t(translations.stepVerify)}</Text>
+                </View>
+                <View style={s.stepLine} />
+                <View style={s.stepItem}>
+                  <View style={s.stepDot}>
+                    <Text style={s.stepNum}>3</Text>
+                  </View>
+                  <Text style={s.stepLabel}>{t(translations.stepReset)}</Text>
+                </View>
+              </>
+            )}
           </Animated.View>
 
           {/* ── Form ── */}
@@ -190,7 +286,7 @@ const EnterCodeResetPassword = () => {
 
             {/* Verification Code */}
             <View style={s.field}>
-              <Text style={s.label}>Verification Code</Text>
+              <Text style={[s.label, isRTL && s.textRTL]}>{t(translations.codeLabel)}</Text>
               <View style={[s.inputBox, codeFocused && s.inputBoxFocused, !!errors.code && s.inputBoxError]}>
                 <Ionicons
                   name="key-outline"
@@ -199,8 +295,8 @@ const EnterCodeResetPassword = () => {
                   style={s.inputIcon}
                 />
                 <TextInput
-                  style={s.input}
-                  placeholder="Enter 6-digit code"
+                  style={[s.input, isRTL && s.inputRTL]}
+                  placeholder={t(translations.codePlaceholder)}
                   placeholderTextColor={C.textMuted}
                   keyboardType="numeric"
                   maxLength={6}
@@ -209,6 +305,7 @@ const EnterCodeResetPassword = () => {
                   onFocus={() => { setCodeFocused(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                   onBlur={() => setCodeFocused(false)}
                   editable={!loading}
+                  textAlign={isRTL ? 'right' : 'left'}
                 />
               </View>
               {errors.code && <ErrorMsg message={errors.code} />}
@@ -216,7 +313,7 @@ const EnterCodeResetPassword = () => {
 
             {/* New Password */}
             <View style={s.field}>
-              <Text style={s.label}>New Password</Text>
+              <Text style={[s.label, isRTL && s.textRTL]}>{t(translations.passwordLabel)}</Text>
               <View style={[s.inputBox, passwordFocused && s.inputBoxFocused, !!errors.password && s.inputBoxError]}>
                 <Ionicons
                   name="lock-closed-outline"
@@ -225,8 +322,8 @@ const EnterCodeResetPassword = () => {
                   style={s.inputIcon}
                 />
                 <TextInput
-                  style={[s.input, { flex: 1 }]}
-                  placeholder="Enter new password"
+                  style={[s.input, isRTL && s.inputRTL, { flex: 1 }]}
+                  placeholder={t(translations.passwordPlaceholder)}
                   placeholderTextColor={C.textMuted}
                   secureTextEntry={!showPassword}
                   value={password}
@@ -234,6 +331,7 @@ const EnterCodeResetPassword = () => {
                   onFocus={() => { setPasswordFocused(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                   onBlur={() => setPasswordFocused(false)}
                   editable={!loading}
+                  textAlign={isRTL ? 'right' : 'left'}
                 />
                 <TouchableOpacity
                   onPress={() => { setShowPassword(!showPassword); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
@@ -247,7 +345,7 @@ const EnterCodeResetPassword = () => {
 
             {/* Confirm Password */}
             <View style={s.field}>
-              <Text style={s.label}>Confirm Password</Text>
+              <Text style={[s.label, isRTL && s.textRTL]}>{t(translations.confirmLabel)}</Text>
               <View style={[s.inputBox, confirmPasswordFocused && s.inputBoxFocused, !!errors.confirmPassword && s.inputBoxError]}>
                 <Ionicons
                   name="lock-closed-outline"
@@ -256,8 +354,8 @@ const EnterCodeResetPassword = () => {
                   style={s.inputIcon}
                 />
                 <TextInput
-                  style={[s.input, { flex: 1 }]}
-                  placeholder="Re-enter new password"
+                  style={[s.input, isRTL && s.inputRTL, { flex: 1 }]}
+                  placeholder={t(translations.confirmPlaceholder)}
                   placeholderTextColor={C.textMuted}
                   secureTextEntry={!showConfirmPassword}
                   value={confirmPassword}
@@ -265,6 +363,7 @@ const EnterCodeResetPassword = () => {
                   onFocus={() => { setConfirmPasswordFocused(true); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                   onBlur={() => setConfirmPasswordFocused(false)}
                   editable={!loading}
+                  textAlign={isRTL ? 'right' : 'left'}
                 />
                 <TouchableOpacity
                   onPress={() => { setShowConfirmPassword(!showConfirmPassword); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
@@ -285,13 +384,75 @@ const EnterCodeResetPassword = () => {
             >
               {loading
                 ? <ActivityIndicator color={C.white} size="small" />
-                : <Text style={s.ctaText}>Reset Password</Text>
+                : <Text style={s.ctaText}>{t(translations.cta)}</Text>
               }
             </TouchableOpacity>
 
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Language Selection Modal – header reversed in RTL */}
+      <Modal
+        visible={showLanguageModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowLanguageModal(false)}
+      >
+        <View style={s.modalOverlay}>
+          <View style={s.modalContent}>
+            <View style={[s.modalHeader, isRTL && s.modalHeaderRTL]}>
+              {isRTL ? (
+                <>
+                  <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
+                    <Ionicons name="close" size={24} color={C.text} />
+                  </TouchableOpacity>
+                  <Text style={[s.modalTitle, s.textRTL]}>{t(translations.selectLanguage)}</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={s.modalTitle}>{t(translations.selectLanguage)}</Text>
+                  <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
+                    <Ionicons name="close" size={24} color={C.text} />
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+            <ScrollView>
+              {languages.map((language) => {
+                const langCode = language === 'English' ? 'english' : language === 'Arabic' ? 'arabic' : 'french';
+                return (
+                  <TouchableOpacity
+                    key={language}
+                    style={[
+                      s.modalOption,
+                      currentLanguage === langCode && s.modalOptionActive,
+                    ]}
+                    onPress={async () => {
+                      setCurrentLanguage(langCode);
+                      await AsyncStorage.setItem('userLanguage', langCode);
+                      setShowLanguageModal(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        s.modalOptionText,
+                        currentLanguage === langCode && s.modalOptionTextActive,
+                        isRTL && s.textRTL,
+                      ]}
+                    >
+                      {language}
+                    </Text>
+                    {currentLanguage === langCode && (
+                      <Ionicons name="checkmark" size={20} color={C.brand} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -310,6 +471,27 @@ const s = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+
+  // Top right language icon
+  topRightButtons: {
+    position: 'absolute',
+    right: 20,
+    zIndex: 100,
+  },
+  iconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: C.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: C.border,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 5 },
+      android: { elevation: 3 },
+    }),
   },
 
   // ── Back arrow — pinned at top ─────────────────────────────────────────────
@@ -378,6 +560,9 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 28,
+  },
+  stepRowRTL: {
+    flexDirection: 'row-reverse',
   },
   stepItem: {
     alignItems: 'center',
@@ -479,6 +664,9 @@ const s = StyleSheet.create({
     color: '#1A1A1A',
     padding: 0,
   },
+  inputRTL: {
+    textAlign: 'right',
+  },
   eyeBtn: {
     paddingLeft: 10,
   },
@@ -517,5 +705,62 @@ const s = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 0.3,
+  },
+
+  // ── RTL text alignment helper ─────────────────────────────────────────────
+  textRTL: {
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+
+  // ── Modal styles ──────────────────────────────────────────────────────────
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalHeaderRTL: {
+    flexDirection: 'row-reverse',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: C.text,
+  },
+  modalOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    marginBottom: 5,
+  },
+  modalOptionActive: {
+    backgroundColor: '#FFEDD5',
+  },
+  modalOptionText: {
+    fontSize: 16,
+    color: C.text,
+  },
+  modalOptionTextActive: {
+    color: C.brand,
+    fontWeight: '500',
   },
 });

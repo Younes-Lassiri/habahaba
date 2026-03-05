@@ -1,5 +1,5 @@
 import React from 'react';
 import OrdersScreen from '../Orders';
 export default function Orders() {
-  return <OrdersScreen userLanguage="english" />; // Pass any required props
+  return <OrdersScreen/>; // Pass any required props
 }

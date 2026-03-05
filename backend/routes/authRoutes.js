@@ -1,5 +1,5 @@
 import express from "express";
-import { register, verifyEmail, login, forgotPassword, resetPassword, getCategories, getProducts, deliveryManLogin, loginWithPhone, sendVerificationCode, verifyPhoneCode, getAllProductsWithOffers, getRestaurantSettingsPublic, getHomePageData, loginWithGoogle, getRestaurantOpenStatus, setClientLanguage, getInCartProducts, checkLiveStatus, getProductNames } from "../controllers/authController.js";
+import { register, verifyEmail, login, forgotPassword, resetPassword, getCategories, getProducts, deliveryManLogin, loginWithPhone, sendVerificationCode, verifyPhoneCode, getAllProductsWithOffers, getRestaurantSettingsPublic, getHomePageData, loginWithGoogle, getRestaurantOpenStatus, setClientLanguage, getInCartProducts, checkLiveStatus, getProductNames, getProfileStats } from "../controllers/authController.js";
 import { verifyToken } from "../middleware/authMiddleware.js";
 import { redirectIfAuthenticated } from "../middleware/redirectIfAuthenticated.js";
 import { createOrder, getOrders, getDeliveryManLocation, checkOrderExists, getLoyaltyRewards, submitOrderRating, estimateDeliveryFee } from "../controllers/orderController.js";
@@ -22,7 +22,7 @@ router.get("/get-categories", getCategories);
 
 router.get("/get-products", getProducts);
 router.get('/products-names', getProductNames);
-router.get("/home-page-data", getHomePageData);
+router.get("/home-page-data", a);
 router.get("/get-products-with-offers", getAllProductsWithOffers);
 router.get("/estimate-delivery-fee", estimateDeliveryFee);
 
@@ -78,4 +78,7 @@ router.post('/set-language', verifyToken, setClientLanguage);
 
 router.get("/in-cart-products", getInCartProducts);
 router.post('/products/check-live-status', checkLiveStatus);
+
+router.get('/profile-stats',verifyToken, getProfileStats);
+
 export default router;
