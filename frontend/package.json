@@ -92,6 +92,7 @@
     "@react-native/metro-config": "^0.82.1",
     "@types/lodash": "^4.17.21",
     "@types/react": "~19.1.10",
+    "@types/react-native": "^0.72.8",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
     "patch-package": "^8.0.1",

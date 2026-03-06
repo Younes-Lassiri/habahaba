@@ -8,13 +8,12 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -886,7 +885,7 @@ export default function CartScreen() {
 
   if (cartItems.length === 0) {
     return (
-      <View style={[styles.container, Platform.OS === 'android' ? { paddingTop: insets.top } : null]}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={[styles.header, isRTL && cartItems.length !== 0 && styles.headerAr]}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.push('/')}>
             <Text style={styles.backArrow}>←</Text>
@@ -915,7 +914,7 @@ export default function CartScreen() {
   }
 
   return (
-    <View style={[styles.container, Platform.OS === 'android' ? { paddingTop: insets.top } : null]}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={{ zIndex: 100 }}><Toast /></View>
       <View style={[styles.header, isRTL && styles.headerAr]}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.push('/')}>

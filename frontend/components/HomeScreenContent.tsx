@@ -545,7 +545,7 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
 
   // JSX
   return (
-    <View style={[styles.container]}>
+    <View style={[styles.container, {paddingTop: insets.top}]}>
       {/* Status Bar */}
       <StatusBar backgroundColor={Colors.primary} barStyle="light-content" />
 

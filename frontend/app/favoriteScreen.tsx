@@ -22,9 +22,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 import { useDispatch, useSelector } from "react-redux";
 import { useRestaurantStatus } from '../contexts/RestaurantStatusContext';
+import { Product } from './redux/slices/homeSlice';
 import { addItem, updateItemQuantity } from "./redux/slices/orderSlice";
 import { RootState } from "./redux/store";
-import { Product } from './redux/slices/homeSlice';
 
 // Helper to compute price considering promo (percentage discount)
 const getProductPrice = (product: Product) => {
@@ -417,7 +417,7 @@ const FavoriteScreen: React.FC<FavoriteScreenProps> = () => {
 
   if (loadingLang || loading) {
     return (
-      <View style={[styles.container, Platform.OS === 'android' ? { paddingTop: insets.top } : null]}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={[styles.header, isRTL && { flexDirection: 'row-reverse' }]}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Ionicons name={isRTL ? 'arrow-forward' : 'arrow-back'} size={24} color={Colors.text.primary} />

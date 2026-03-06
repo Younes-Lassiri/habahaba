@@ -113,20 +113,26 @@ const getGoogleRouteCoordinates = async (
   end: { lat: number; lng: number }
 ): Promise<Array<{ latitude: number; longitude: number }>> => {
   try {
-    const response = await axios.get(
-      `https://maps.googleapis.com/maps/api/directions/json?origin=${start.lat},${start.lng}&destination=${end.lat},${end.lng}&key=${GOOGLE_API_KEY}&mode=driving`
-    );
+    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${start.lat},${start.lng}&destination=${end.lat},${end.lng}&key=${GOOGLE_API_KEY}&mode=driving`;
+    console.log('Directions URL:', url.replace(GOOGLE_API_KEY!, 'HIDDEN_KEY')); // log without exposing key
+
+    const response = await axios.get(url);
+    console.log('Directions API response status:', response.data.status);
+    
     if (response.data.status === 'OK' && response.data.routes.length > 0) {
       const route = response.data.routes[0];
       const points = route.overview_polyline.points;
       return decodePolyline(points);
     } else {
+      console.warn('Directions API returned non-OK status:', response.data.status, response.data.error_message);
+      // fallback to straight line
       return [
         { latitude: start.lat, longitude: start.lng },
         { latitude: end.lat, longitude: end.lng },
       ];
     }
   } catch (error) {
+    console.error('Directions API request failed:', error);
     return [
       { latitude: start.lat, longitude: start.lng },
       { latitude: end.lat, longitude: end.lng },

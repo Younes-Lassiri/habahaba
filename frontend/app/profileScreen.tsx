@@ -9,7 +9,6 @@ import {
   Alert,
   Image,
   Modal,
-  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -18,7 +17,6 @@ import {
   View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
 import { useDispatch } from 'react-redux';
 import { setLanguage } from './redux/slices/languageSlice';
 // Remove this line: import useLogout from './logout';
@@ -318,7 +316,7 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
   };
 
   return (
-    <View style={[styles.container, Platform.OS === 'android' ? { paddingTop: insets.top } : null]}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <ScrollView 
         style={styles.scrollView} 
         showsVerticalScrollIndicator={false} 

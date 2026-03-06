@@ -3,19 +3,17 @@ import Colors from '@/constants/Colors';
 import { useNotifications } from '@/hooks/useNotifications';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from 'expo-router';
 import axios from 'axios';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -365,7 +363,7 @@ const NotificationsScreen: React.FC = () => {
   // Show loading only while fetching initial language or notifications
   if (loadingLang || loading) {
     return (
-      <View style={[styles.container, Platform.OS === 'android' ? { paddingTop: insets.top } : null]}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={[styles.header, isRTL && styles.headerRtl]}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Ionicons name={isRTL ? 'arrow-forward' : 'arrow-back'} size={24} color={Colors.text.primary} />
@@ -396,7 +394,7 @@ const NotificationsScreen: React.FC = () => {
     : "You'll see notifications here when there's something new";
 
   return (
-    <View style={[styles.container, Platform.OS === 'android' ? { paddingTop: insets.top } : null]}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={[styles.header, isRTL && styles.headerRtl]}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>

@@ -118,6 +118,8 @@ export async function sendFCMNotification(tokens, title, body, data = {}) {
               aps: {
                 sound: 'default',
                 badge: 1,
+                // 'content-available': 1 is critical for waking the app in the background
+                'content-available': 1, 
                 alert: {
                   title: String(title || 'Notification'),
                   body: String(body || '')
@@ -125,7 +127,8 @@ export async function sendFCMNotification(tokens, title, body, data = {}) {
               }
             },
             headers: {
-              'apns-priority': '10' 
+              'apns-priority': '10', // Immediate delivery
+              'apns-push-type': 'alert' // Required for notifications with a visible alert
             }
           }
         };
