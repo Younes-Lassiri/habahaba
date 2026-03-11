@@ -45,7 +45,6 @@ const C = {
   textMuted:    '#9A9A9A',
   border:       '#E5E5E5',
   error:        '#FF3B30',
-  googleRed:    '#DB4437',
 };
 
 // ─── Translation dictionary ─────────────────────────────────────────────────
@@ -61,7 +60,6 @@ const translations = {
   forgotPassword:  { en: 'Forgot Password?', ar: 'نسيت كلمة المرور؟', fr: 'Mot de passe oublié ?' },
   signIn:          { en: 'Sign In', ar: 'تسجيل الدخول', fr: 'Se connecter' },
   or:              { en: 'OR', ar: 'أو', fr: 'OU' },
-  continueWithGoogle: { en: 'Continue with Google', ar: 'متابعة عبر جوجل', fr: 'Continuer avec Google' },
   noAccount:       { en: "Don't have an account? ", ar: 'ليس لديك حساب؟ ', fr: 'Pas de compte ? ' },
   signUp:          { en: 'Sign Up', ar: 'تسجيل حساب', fr: "S'inscrire" },
   selectLanguage:  { en: 'Select Language', ar: 'اختر اللغة', fr: 'Choisir la langue' },
@@ -283,7 +281,6 @@ const TAB_WIDTH = (width - SCREEN_H_PAD * 2 - TAB_BAR_INNER_PAD * 2) / 2;
 const SignIn: React.FC = () => {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
-  const [loadingGoogle, setLoadingGoogle] = useState(false);
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'Email' | 'Phone'>('Email');
   const [showPassword, setShowPassword] = useState(false);
@@ -591,22 +588,6 @@ const SignIn: React.FC = () => {
             <Text style={[s.dividerText, isRTL && s.textRTL]}>{t(translations.or)}</Text>
             <View style={s.dividerLine} />
           </Animated.View>
-
-          {/* Google button */}
-          <Animated.View entering={FadeInDown.delay(560).springify()}>
-            <TouchableOpacity
-              style={s.googleBtn}
-              activeOpacity={0.7}
-              disabled={loading}
-              // onPress={handleGoogleSignIn}
-            >
-              <FontAwesome name="google" size={17} color={C.googleRed} />
-              <Text style={[s.googleText, isRTL && s.textRTL]}>
-                {loadingGoogle ? t({ en: 'Signing in...', ar: 'جاري تسجيل الدخول...', fr: 'Connexion en cours...' }) : t(translations.continueWithGoogle)}
-              </Text>
-            </TouchableOpacity>
-          </Animated.View>
-
           {/* Sign up row – RTL order: text on right, link on left */}
           <Animated.View entering={FadeInDown.delay(620).springify()}>
             {isRTL ? (
@@ -960,29 +941,6 @@ const s = StyleSheet.create({
     color: C.textMuted,
     letterSpacing: 1,
   },
-
-  // Google
-  googleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 52,
-    borderWidth: 1.5,
-    borderColor: C.border,
-    borderRadius: 14,
-    backgroundColor: C.white,
-    gap: 10,
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3 },
-      android: { elevation: 1 },
-    }),
-  },
-  googleText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: C.text,
-  },
-
   // Sign up (LTR)
   signupRow: {
     flexDirection: 'row',

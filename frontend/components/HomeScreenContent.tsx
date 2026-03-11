@@ -545,8 +545,7 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
 
   // JSX
   return (
-    <View style={[styles.container, {paddingTop: insets.top}]}>
-      {/* Status Bar */}
+    <View style={[styles.container, { paddingTop: Platform.OS === 'ios' ? insets.top : undefined }]}>      {/* Status Bar */}
       <StatusBar backgroundColor={Colors.primary} barStyle="light-content" />
 
       {/* Filter Modal - Redesigned */}
@@ -714,7 +713,7 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
                         <Text style={styles.seeOrderButtonText}>
                           {t(language, { en: 'See Your Order', ar: 'عرض طلبك', fr: 'Voir votre commande' })}
                         </Text>
-                        <Ionicons name="arrow-forward" size={20} color={Colors.primary} />
+                        <Ionicons name="arrow-forward" size={20} color={Colors.primary} />µ
                       </>
                     )}
                   </LinearGradient>

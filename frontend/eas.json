@@ -7,8 +7,7 @@
         "buildType": "apk",
         "credentialsSource": "local"
       },
-      "channel": "main",
-      "env": { "RCT_NEW_ARCH_ENABLED": "1" }
+      "channel": "main"
     },
     "preview": {
       "distribution": "internal",
