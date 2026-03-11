@@ -13,69 +13,63 @@
     "scheme": "restaurantapp",
     "userInterfaceStyle": "automatic",
     "plugins": [
-      [
-        "expo-image-picker",
+  "./withPodfilePostInstall.js",
+  [
+    "expo-build-properties",
+    {
+      "android": {
+        "enableProguardInReleaseBuilds": false,
+        "enableMinifyInReleaseBuilds": false,
+        "newArchEnabled": true
+      },
+      "ios": {
+        "newArchEnabled": true,
+        "useFrameworks": "static",
+        "extraPods": []
+      }
+    }
+  ],
+  [
+    "expo-image-picker",
+    {
+      "photosPermission": "The app accesses your photos to let you share them with your friends.",
+      "cameraPermission": "The app accesses your camera to let you take profile photos."
+    }
+  ],
+  [
+    "expo-location",
+    {
+      "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location."
+    }
+  ],
+  [
+    "expo-system-ui",
+    { "edgeToEdge": true }
+  ],
+  [
+    "expo-notifications",
+    {
+      "icon": "./assets/images/playStoreLogo.png",
+      "androidMode": "badge",
+      "androidCollapsedTitle": "New Order",
+      "channels": [
         {
-          "photosPermission": "The app accesses your photos to let you share them with your friends.",
-          "cameraPermission": "The app accesses your camera to let you take profile photos."
+          "id": "new-order-alert",
+          "name": "New Order Alert",
+          "priority": "max",
+          "importance": "max",
+          "vibrationPattern": [0, 250, 250, 250],
+          "sound": "newOrderAlert.mp3"
         }
-      ],
-      [
-        "expo-location",
-        {
-          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location."
-        }
-      ],
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "enableProguardInReleaseBuilds": false,
-            "enableMinifyInReleaseBuilds": false,
-            "newArchEnabled": true
-          },
-          "ios": {
-            "newArchEnabled": true,
-            "useFrameworks": "static",
-            "extraPods": []
-          }
-        }
-      ],
-      [
-        "expo-system-ui",
-        {
-          "edgeToEdge": true
-        }
-      ],
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/images/playStoreLogo.png",
-          "androidMode": "badge",
-          "androidCollapsedTitle": "New Order",
-          "channels": [
-            {
-              "id": "new-order-alert",
-              "name": "New Order Alert",
-              "priority": "max",
-              "importance": "max",
-              "vibrationPattern": [
-                0,
-                250,
-                250,
-                250
-              ],
-              "sound": "newOrderAlert.mp3"
-            }
-          ]
-        }
-      ],
-      "expo-router",
-      "./withNotificationConflict.js",
-      "@react-native-community/datetimepicker",
-      "expo-font",
-      "expo-web-browser"
-    ],
+      ]
+    }
+  ],
+  "expo-router",
+  "./withNotificationConflict.js",
+  "@react-native-community/datetimepicker",
+  "expo-font",
+  "expo-web-browser"
+],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.habba.app",
