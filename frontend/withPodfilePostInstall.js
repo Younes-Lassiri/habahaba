@@ -1,46 +1,34 @@
-const { withDangerousMod } = require('@expo/config-plugins');
-const fs = require('fs');
-const path = require('path');
+const { withMod } = require('@expo/config-plugins');
 
 module.exports = (config) => {
-  return withDangerousMod(config, [
-    'ios',
-    async (config) => {
-      const podfilePath = path.join(config.modRequest.platformProjectRoot, 'Podfile');
-      let contents = fs.readFileSync(podfilePath, 'utf8');
+  return withMod(config, {
+    platform: 'ios',
+    mod: 'podfile',
+    action: (config) => {
+      let contents = config.modResults.contents;
 
-      // The code to inject for react-native-maps
-      const mapsFix = `
-  # allow non-modular includes for react-native-maps
-  installer.pods_project.targets.each do |target|
-    if target.name.include?('react-native-maps') || target.name.include?('react_native_maps')
+      const heavyFix = `
+    installer.pods_project.targets.each do |target|
       target.build_configurations.each do |config|
+        # This is the "Magic" flag that stops the non-modular error
         config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+        # This ensures the compiler doesn't treat the warning as a hard error
+        config.build_settings['OTHER_CFLAGS'] = '-Wno-error=non-modular-include-in-framework-module'
       end
     end
-  end
 `;
 
-      // Look for an existing post_install block
-      const postInstallRegex = /(^\s*post_install\s+do\s*\|[^|]*\|.*?)(\n\s*end\b)/ms;
-      const match = contents.match(postInstallRegex);
-
-      if (match) {
-        // Existing block found – insert our code before its 'end'
-        const [fullBlock, blockStart, blockEnd] = match;
-        const newBlock = blockStart + mapsFix + blockEnd;
-        contents = contents.replace(fullBlock, newBlock);
+      if (contents.includes('post_install do |installer|')) {
+        contents = contents.replace(
+          /post_install do \|installer\|/,
+          `post_install do |installer|${heavyFix}`
+        );
       } else {
-        // No post_install yet – append a new one at the end
-        const newHook = `
-post_install do |installer|${mapsFix}
-end
-`;
-        contents += newHook;
+        contents += `\npost_install do |installer|\n${heavyFix}\nend\n`;
       }
 
-      fs.writeFileSync(podfilePath, contents);
+      config.modResults.contents = contents;
       return config;
     },
-  ]);
+  });
 };
