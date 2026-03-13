@@ -26,12 +26,18 @@ import { Product } from './redux/slices/homeSlice';
 import { addItem, updateItemQuantity } from "./redux/slices/orderSlice";
 import { RootState } from "./redux/store";
 
-// Helper to compute price considering promo (percentage discount)
+// Helper to round a number up to the nearest 0.5
+const roundPriceToHalf = (num: number) => {
+  return Math.ceil(num * 2) / 2;
+};
+
+// Helper to compute price considering promo (percentage discount) and rounding
 const getProductPrice = (product: Product) => {
   if (product.promo && product.promoValue) {
     const original = product.price || 0;
     const discountAmount = original * (product.promoValue / 100);
-    const final = Math.max(original - discountAmount, 0);
+    const discounted = Math.max(original - discountAmount, 0);
+    const final = roundPriceToHalf(discounted);
     return {
       final,
       original,
@@ -39,8 +45,9 @@ const getProductPrice = (product: Product) => {
     };
   }
   // Fallback to existing discount fields
+  const final = roundPriceToHalf(product.final_price || product.price);
   return {
-    final: product.final_price || product.price,
+    final,
     original: product.original_price || product.price,
     hasDiscount: product.discount_applied ?? false,
   };
@@ -83,7 +90,7 @@ const FavoriteCard = React.memo(({
   const isRTL = userLanguage === 'arabic';
   const isLTR = !isRTL;
 
-  // Get price info (promo-aware)
+  // Get price info (promo-aware, rounded to nearest 0.5)
   const { final, original, hasDiscount } = getProductPrice(product);
 
   const handleAddToCart = (e: any) => {
@@ -123,7 +130,7 @@ const FavoriteCard = React.memo(({
       return (
         <View style={[styles.priceContainer, isLTR && styles.priceContainerLtr]}>
           <Text style={styles.price}>
-            {Math.round(final)} <Text style={styles.currency}>{currency}</Text>
+            {final} <Text style={styles.currency}>{currency}</Text>
           </Text>
           <Text style={styles.oldPrice}>{Math.round(original)} {currency}</Text>
         </View>
@@ -131,7 +138,7 @@ const FavoriteCard = React.memo(({
     }
     return (
       <Text style={styles.price}>
-        {Math.round(original)} <Text style={styles.currency}>{currency}</Text>
+        {final} <Text style={styles.currency}>{currency}</Text>
       </Text>
     );
   };
@@ -363,23 +370,23 @@ const FavoriteScreen: React.FC<FavoriteScreenProps> = () => {
       return;
     }
 
-    // Use the same helper to get the correct price and discount status
+    // Use the same helper to get the correct rounded price and discount status
     const { final, original, hasDiscount } = getProductPrice(product);
 
     dispatch(
       addItem({
         id: product.id,
-                name: product.name,
-                description: product.description || '',
-                price: final,
-                quantity: 1,
-                image: product.image || '',
-                restaurant: restaurantName, // use from Redux
-                discount_applied: hasDiscount,
-                original_price: original,
-                offer_info: product.offer_info,
-                specialInstructions: '',
-                showSpecialInstructions: false,
+        name: product.name,
+        description: product.description || '',
+        price: final,
+        quantity: 1,
+        image: product.image || '',
+        restaurant: restaurantName, // use from Redux
+        discount_applied: hasDiscount,
+        original_price: original,
+        offer_info: product.offer_info,
+        specialInstructions: '',
+        showSpecialInstructions: false,
       })
     );
 

@@ -1,22 +1,21 @@
 import type { Product } from '@/app/redux/slices/homeSlice';
+import { addItem, updateItemQuantity } from '@/app/redux/slices/orderSlice';
+import type { RootState } from '@/app/redux/store';
 import Colors from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { memo } from 'react';
+import { memo } from 'react';
 import {
+    Alert,
     Image,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
-    Alert,
 } from 'react-native';
-import { useDispatch, useSelector } from 'react-redux';
-import type { RootState } from '@/app/redux/store';
-import { addItem, updateItemQuantity } from '@/app/redux/slices/orderSlice';
 import Toast from 'react-native-toast-message';
-import { router } from 'expo-router';
+import { useDispatch, useSelector } from 'react-redux';
 
 interface PopularProductCardProps {
     product: Product;
@@ -26,6 +25,18 @@ interface PopularProductCardProps {
     restaurantIsOpen: boolean;
     userLanguage?: 'english' | 'arabic' | 'french';
 }
+
+// Helper to round price according to the rule:
+// - fractional part < 0.5 → integer + 0.5
+// - fractional part ≥ 0.5 → integer + 1
+// - exact integer stays integer
+const roundPrice = (price: number): number => {
+    const intPart = Math.floor(price);
+    const fracPart = price - intPart;
+    if (fracPart === 0) return price;          // keep integer
+    if (fracPart < 0.5) return intPart + 0.5;  // up to .5
+    return Math.ceil(price);                   // round up
+};
 
 const PopularProductCard = memo<PopularProductCardProps>(({
     product,
@@ -43,22 +54,36 @@ const PopularProductCard = memo<PopularProductCardProps>(({
     // Get restaurant name from home slice
     const { restaurant_name } = useSelector((state: RootState) => state.home);
 
-    // Price calculation
+    // ----- Price calculation with rounding (matches ProductDetailsPage) -----
+    const originalPrice = product.original_price || product.price || 0;
+    let finalPrice = product.final_price;
+
+    if (finalPrice === null || finalPrice === undefined || finalPrice <= 0) {
+        finalPrice = originalPrice;
+    }
+
+    const hasDiscount = product.discount_applied && finalPrice < originalPrice;
+    const hasPromo = product.promo && product.promoValue && !hasDiscount;
+
     let displayPrice: number;
     let displayOldPrice: number | undefined;
     let showDiscount: boolean;
 
-    if (product.promo && product.promoValue) {
-        const original = product.price || 0;
-        const discountAmount = original * (product.promoValue / 100);
-        displayPrice = Math.max(original - discountAmount, 0);
-        displayOldPrice = original;
+    if (hasDiscount) {
+        displayPrice = roundPrice(finalPrice);
+        displayOldPrice = Math.round(originalPrice); // original price (integer)
+        showDiscount = true;
+    } else if (hasPromo) {
+        const discounted = originalPrice * (1 - (product.promoValue || 0) / 100);
+        displayPrice = roundPrice(discounted);
+        displayOldPrice = Math.round(originalPrice);
         showDiscount = true;
     } else {
-        displayPrice = product.final_price || product.price;
-        displayOldPrice = product.original_price;
-        showDiscount = product.discount_applied ?? false;
+        displayPrice = roundPrice(originalPrice);
+        displayOldPrice = undefined;
+        showDiscount = false;
     }
+    // -----------------------------------------------------------------------
 
     const handleAddToCart = (e: any) => {
         e.stopPropagation();
@@ -73,7 +98,6 @@ const PopularProductCard = memo<PopularProductCardProps>(({
             return;
         }
 
-        const finalPrice = displayPrice;
         const existingItem = cartItems.find(item => item.id === product.id);
 
         if (existingItem) {
@@ -86,12 +110,12 @@ const PopularProductCard = memo<PopularProductCardProps>(({
                 id: product.id,
                 name: product.name,
                 description: product.description || '',
-                price: finalPrice,
+                price: displayPrice,                // rounded price
                 quantity: 1,
                 image: product.image || '',
-                restaurant: restaurant_name || '', // use from Redux
+                restaurant: restaurant_name || '',
                 discount_applied: showDiscount,
-                original_price: displayOldPrice,
+                original_price: originalPrice,
                 offer_info: product.offer_info,
                 specialInstructions: '',
                 showSpecialInstructions: false,
@@ -191,11 +215,12 @@ const PopularProductCard = memo<PopularProductCardProps>(({
                 <View style={styles.footer}>
                     {renderCartButton()}
                     <View style={styles.priceContainer}>
+                        {/* Display price without rounding – it may be .5 */}
                         <Text style={styles.price}>
-                            {Math.round(displayPrice)} <Text style={styles.currency}>MAD</Text>
+                            {displayPrice} <Text style={styles.currency}>MAD</Text>
                         </Text>
                         {showDiscount && displayOldPrice && (
-                            <Text style={styles.oldPrice}>{Math.round(displayOldPrice)} MAD</Text>
+                            <Text style={styles.oldPrice}>{displayOldPrice} MAD</Text>
                         )}
                     </View>
                 </View>

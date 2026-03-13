@@ -1,11 +1,14 @@
-import { Tabs } from 'expo-router';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
-import { View, Text, StyleSheet, Image } from 'react-native';
+import { useAuth } from '@/contexts/AuthContext';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useNotifications } from '@/hooks/useNotifications';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Tabs, useRouter } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSelector } from 'react-redux';
 import { RootState } from '../redux/store';
-import { useNotifications } from '@/hooks/useNotifications';
 
 // Define tab configuration
 type TabConfig = {
@@ -20,19 +23,49 @@ export default function TabLayout() {
   const cartItems = useSelector((state: RootState) => state.orders.items);
   const cartItemCount = cartItems?.length || 0;
   const { unreadCount } = useNotifications();
+  const { isAuthenticated } = useAuth();
+  const router = useRouter();
 
-  // Language from Redux – this updates immediately when dispatch is called
-  const language = useSelector((state: RootState) => state.language.current) || 'english';
-  const isRTL = language === 'arabic';
+  // Local language state (not from Redux)
+  const [userLanguage, setUserLanguage] = useState<'english' | 'arabic' | 'french'>('english');
+  const languageRef = useRef(userLanguage);
 
-  // Translation helper
+  // Poll AsyncStorage every 500ms to detect language changes
+  useEffect(() => {
+    const checkLanguage = async () => {
+      try {
+        const lang = await AsyncStorage.getItem('userLanguage');
+        if (lang === 'english' || lang === 'arabic' || lang === 'french') {
+          if (lang !== languageRef.current) {
+            setUserLanguage(lang);
+            languageRef.current = lang;
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check language:', error);
+      }
+    };
+
+    // Check immediately on mount
+    checkLanguage();
+
+    const interval = setInterval(checkLanguage, 500);
+    return () => clearInterval(interval);
+  }, []);
+
+  const isRTL = userLanguage === 'arabic';
+
+  // Translation helper – uses local userLanguage
   const t = (key: { en: string; ar: string; fr: string }): string => {
-    if (language === 'arabic') return key.ar;
-    if (language === 'french') return key.fr;
+    if (userLanguage === 'arabic') return key.ar;
+    if (userLanguage === 'french') return key.fr;
     return key.en;
   };
 
-  // Tab definitions
+  // Tabs that require authentication
+  const protectedTabs = ['orders', 'cart', 'notifications', 'profile'];
+
+  // Tab definitions (unchanged)
   const tabs: TabConfig[] = [
     {
       name: 'index',
@@ -116,20 +149,44 @@ export default function TabLayout() {
         },
       }}
     >
-      {orderedTabs.map((tab) => (
-        <Tabs.Screen
-          key={tab.name}
-          name={tab.name}
-          options={{
-            title: t(tab.title),
-            tabBarIcon: tab.icon,
-            ...(tab.isCart && {
-              tabBarLabel: t(tab.title),
-              tabBarLabelPosition: 'below-icon',
-            }),
-          }}
-        />
-      ))}
+      {orderedTabs.map((tab) => {
+        const isProtected = protectedTabs.includes(tab.name);
+
+        return (
+          <Tabs.Screen
+            key={tab.name}
+            name={tab.name}
+            options={{
+              // Change profile tab title to "Login" when not authenticated
+              title:
+                tab.name === 'profile' && !isAuthenticated
+                  ? t({ en: 'Login', ar: 'تسجيل الدخول', fr: 'Connexion' })
+                  : t(tab.title),
+              tabBarIcon: tab.icon,
+              ...(tab.isCart && {
+                tabBarLabel: t(tab.title),
+                tabBarLabelPosition: 'below-icon',
+              }),
+              // Custom press handler for protected tabs
+              tabBarButton: ({ ref: _ref, ...props }) => (
+                <Pressable
+                  {...props}
+                  onPress={(e) => {
+                    if (isProtected && !isAuthenticated) {
+                      e.preventDefault();
+                      router.push('/signin');
+                    } else {
+                      props.onPress?.(e);
+                    }
+                  }}
+                >
+                  {props.children}
+                </Pressable>
+              ),
+            }}
+          />
+        );
+      })}
     </Tabs>
   );
 }

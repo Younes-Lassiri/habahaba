@@ -1,12 +1,10 @@
 import { OrderCardSkeleton } from '@/components/ui/skeleton';
-import Colors from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FlashList } from '@shopify/flash-list';
 import axios from 'axios';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
-import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -86,6 +84,7 @@ interface LiveProduct {
   discount_applied: boolean;
   offer_info: any;
   restaurant: string;
+  original_price: number;
 }
 
 // Status configuration with English, Arabic, French
@@ -569,48 +568,79 @@ export default function OrdersScreen() {
     }
   };
 
-  const handleReorder = useCallback(async (order: Order) => {
-    const { items, restaurant: orderRest } = order;
-    if (!items?.length) return;
-    try {
-      const userData = await AsyncStorage.getItem('client');
-      const user = JSON.parse(userData || '{}');
-      const token = await AsyncStorage.getItem('token');
-      const response = await axios.post(
-        'https://haba-haba-api.ubua.cloud/api/auth/products/check-live-status',
-        { productIds: items.map(i => i.product_id), userId: user.id },
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      if (response.data.success) {
-        const liveProducts: LiveProduct[] = response.data.products;
-        items.forEach((historyItem) => {
-          const live = liveProducts.find((p: LiveProduct) => p.id === historyItem.product_id);
-          if (!live) return;
-          dispatch(addItem({
-            id: live.id, name: live.name, description: '',
-            price: live.promo && live.promoValue
-              ? Math.max((live.price || 0) - (live.price || 0) * (live.promoValue / 100), 0)
-              : live.discount_applied ? live.final_price : live.price,
-              quantity: historyItem.quantity, image: live.image,
-            restaurant: restaurant_name || live.restaurant || 'Restaurant',
-            discount_applied: live.discount_applied, original_price: live.price,
-            offer_info: live.discount_applied ? live.offer_info : null,
-            specialInstructions: '', showSpecialInstructions: false
-          }));
-        });
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert(
-          isArabic ? 'نجاح' : isFrench ? 'Succès' : 'Success',
-          isArabic ? 'تمت إضافة المنتجات بالأسعار الحالية' : isFrench ? 'Produits ajoutés avec les prix actuels' : 'Items added with current live prices'
-        );
-      }
-    } catch (error) {
+const handleReorder = useCallback(async (order: Order) => {
+  const { items, restaurant: orderRest } = order;
+  if (!items?.length) return;
+
+  // Helper to calculate the final rounded price (ceil to 0.5)
+  const getFinalPrice = (product: LiveProduct): number => {
+    const roundToHalfCeil = (num: number) => Math.ceil(num * 2) / 2;
+
+    const original = product.original_price || product.price || 0;
+
+    // Promo takes precedence
+    if (product.promo && product.promoValue) {
+      const discounted = original * (1 - (product.promoValue || 0) / 100);
+      return roundToHalfCeil(discounted);
+    }
+
+    // Discount applied (but not promo)
+    if (product.discount_applied && product.final_price) {
+      return roundToHalfCeil(product.final_price);
+    }
+
+    // No discount/promo – use original price
+    return roundToHalfCeil(original);
+  };
+
+  try {
+    const userData = await AsyncStorage.getItem('client');
+    const user = JSON.parse(userData || '{}');
+    const token = await AsyncStorage.getItem('token');
+    const response = await axios.post(
+      'https://haba-haba-api.ubua.cloud/api/auth/products/check-live-status',
+      { productIds: items.map(i => i.product_id), userId: user.id },
+      { headers: { 'Authorization': `Bearer ${token}` } }
+    );
+
+    if (response.data.success) {
+      const liveProducts: LiveProduct[] = response.data.products;
+
+      items.forEach((historyItem) => {
+        const live = liveProducts.find((p: LiveProduct) => p.id === historyItem.product_id);
+        if (!live) return;
+
+        const finalPrice = getFinalPrice(live);
+
+        dispatch(addItem({
+          id: live.id,
+          name: live.name,
+          description: '',
+          price: finalPrice,
+          quantity: historyItem.quantity,
+          image: live.image,
+          restaurant: restaurant_name || live.restaurant || 'Restaurant',
+          discount_applied: live.discount_applied,
+          original_price: live.price,
+          offer_info: live.discount_applied ? live.offer_info : null,
+          specialInstructions: '',
+          showSpecialInstructions: false
+        }));
+      });
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
-        isArabic ? 'خطأ' : isFrench ? 'Erreur' : 'Error',
-        isArabic ? 'حدث خطأ أثناء تحديث الأسعار' : isFrench ? 'Erreur lors de la mise à jour des prix' : 'Error updating live prices'
+        isArabic ? 'نجاح' : isFrench ? 'Succès' : 'Success',
+        isArabic ? 'تمت إضافة المنتجات بالأسعار الحالية' : isFrench ? 'Produits ajoutés avec les prix actuels' : 'Items added with current live prices'
       );
     }
-  }, [dispatch, restaurant_name, isArabic, isFrench]);
+  } catch (error) {
+    Alert.alert(
+      isArabic ? 'خطأ' : isFrench ? 'Erreur' : 'Error',
+      isArabic ? 'حدث خطأ أثناء تحديث الأسعار' : isFrench ? 'Erreur lors de la mise à jour des prix' : 'Error updating live prices'
+    );
+  }
+}, [dispatch, restaurant_name, isArabic, isFrench]);
 
   const onRefresh = async () => {
     setRefreshing(true);

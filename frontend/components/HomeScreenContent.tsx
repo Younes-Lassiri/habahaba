@@ -1,48 +1,47 @@
 // components/HomeScreenContent.tsx
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Slider from '@react-native-community/slider';
+import axios from 'axios';
+import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  RefreshControl,
   Animated,
-  TouchableOpacity,
-  TextInput,
+  Dimensions,
   Image,
   Modal,
-  StyleSheet,
-  Dimensions,
   Platform,
+  RefreshControl,
+  ScrollView,
   StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useDispatch, useSelector } from 'react-redux';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import * as Haptics from 'expo-haptics';
 import Toast from 'react-native-toast-message';
-import axios from 'axios';
-import Slider from '@react-native-community/slider';
+import { useDispatch, useSelector } from 'react-redux';
 
-import Colors from '@/constants/Colors';
-import { useRestaurantStatus } from '@/contexts/RestaurantStatusContext';
-import { useWebSocketNotifications } from '@/hooks/useWebSocketNotifications';
-import { useScrollPosition } from '@/contexts/ScrollPositionContext';
+import type { Product } from '@/app/redux/slices/homeSlice';
 import { fetchHomePageData } from '@/app/redux/slices/homeSlice';
 import { addItem, removeItem, updateItemQuantity } from '@/app/redux/slices/orderSlice';
 import type { AppDispatch, RootState } from '@/app/redux/store';
-import type { Product } from '@/app/redux/slices/homeSlice';
+import Colors from '@/constants/Colors';
+import { useRestaurantStatus } from '@/contexts/RestaurantStatusContext';
+import { useScrollPosition } from '@/contexts/ScrollPositionContext';
+import { useWebSocketNotifications } from '@/hooks/useWebSocketNotifications';
 
 // Components
+import { LiveActivityBar } from '@/app/LiveActivityBar';
+import CreativeSection from '@/app/specialOffers';
 import CategoryItem from '@/components/CategoryItem';
 import PopularProductCard from '@/components/PopularProductCard';
 import ProductGrid from '@/components/ProductGrid';
 import { RestaurantClosedBanner } from '@/components/RestaurantClosedBanner';
-import CreativeSection from '@/app/specialOffers';
-import { LiveActivityBar } from '@/app/LiveActivityBar';
 
 const { width } = Dimensions.get('window');
 

@@ -1,27 +1,28 @@
-import React, { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { registerForPushNotificationsAsync } from "@/utils/notifications";
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
+import * as Haptics from 'expo-haptics';
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import {
-  View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-  SafeAreaView,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StatusBar,
-  Modal,
+  View,
 } from "react-native";
-import { useRouter, useLocalSearchParams } from "expo-router";
-import axios from "axios";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { registerForPushNotificationsAsync } from "@/utils/notifications";
 
 const C = {
   bg:            '#FFFFFF',
@@ -81,6 +82,7 @@ const EnterCodeResetPassword = () => {
   const [codeFocused, setCodeFocused]             = useState(false);
   const [passwordFocused, setPasswordFocused]     = useState(false);
   const [confirmPasswordFocused, setConfirmPasswordFocused] = useState(false);
+  const { login } = useAuth();
 
   // ── Language state ───────────────────────────────────────────────────────
   const [currentLanguage, setCurrentLanguage] = useState<'english' | 'arabic' | 'french'>('english');
@@ -144,7 +146,7 @@ const EnterCodeResetPassword = () => {
       if (response.data.success) {
         await AsyncStorage.setItem("token", response.data.token);
         await AsyncStorage.setItem("client", JSON.stringify(response.data.client));
-
+        await login();
         const clientId = response.data.client.id || response.data.client._id;
         if (clientId) {
           await registerForPushNotificationsAsync("client", clientId);

@@ -1,11 +1,12 @@
+import { useAuth } from "@/contexts/AuthContext";
+import { registerForPushNotificationsAsync } from "@/utils/notifications";
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from '@react-navigation/native';
-import { useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from 'react';
-import { registerForPushNotificationsAsync } from "@/utils/notifications";
-import { FontAwesome, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from "expo-image";
+import { useRouter } from "expo-router";
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -29,7 +30,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import LoginHeader from '../assets/images/playStoreLogo.png';
-import { useAuth } from "@/contexts/AuthContext";
 
 const { width } = Dimensions.get('window');
 
@@ -452,25 +452,38 @@ const SignIn: React.FC = () => {
   }));
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeAreaView style={[s.safe, {paddingTop: insets.top}]}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
-      {/* Top right buttons: Language + Delivery */}
-      <View style={[s.topRightButtons, { top: Platform.OS === 'ios' ? 54 : 50 }]}>
+      {/* ─── NEW HEADER ROW: back, language, delivery on one line ─── */}
+      <View style={s.headerRow}>
         <TouchableOpacity
-          style={s.iconButton}
-          onPress={() => setShowLanguageModal(true)}
+          style={s.backBtn}
+          onPress={() => router.back()}
           activeOpacity={0.7}
         >
-          <Ionicons name="language-outline" size={22} color={C.text} />
+          <Ionicons name="arrow-back" size={22} color={C.text} />
         </TouchableOpacity>
-        <TouchableOpacity
-          style={s.iconButton}
-          onPress={() => { router.push("/delivery/login"); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="bicycle-outline" size={22} color={C.brand} />
-        </TouchableOpacity>
+
+        <View style={s.headerRight}>
+          <TouchableOpacity
+            style={s.iconButton}
+            onPress={() => setShowLanguageModal(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="language-outline" size={22} color={C.text} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={s.iconButton}
+            onPress={() => {
+              router.push("/delivery/login");
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="bicycle-outline" size={22} color={C.brand} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -483,13 +496,6 @@ const SignIn: React.FC = () => {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Back button - always arrow-back (no flip) */}
-          <Animated.View entering={FadeInDown.delay(40).springify()} style={s.topNav}>
-            <TouchableOpacity style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
-              <Ionicons name="arrow-back" size={22} color={C.text} />
-            </TouchableOpacity>
-          </Animated.View>
-
           {/* Headline with RTL text alignment */}
           <Animated.View entering={FadeInDown.delay(90).springify()} style={s.headline}>
             <Text style={[s.headlineTitle, isRTL && s.textRTL]}>{t(translations.headlineTitle)}</Text>
@@ -693,14 +699,23 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Top right buttons
-  topRightButtons: {
-    position: 'absolute',
-    right: 20,
+  // Header row (new)
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: SCREEN_H_PAD,
+    paddingTop: Platform.OS === 'ios' ? 8 : 12,
+    paddingBottom: 8,
+    backgroundColor: C.bg,
+    zIndex: 10,
+  },
+  headerRight: {
     flexDirection: 'row',
     gap: 12,
-    zIndex: 100,
   },
+
+  // Top right buttons (no longer absolutely positioned, but kept for .iconButton)
   iconButton: {
     width: 42,
     height: 42,
@@ -716,11 +731,7 @@ const s = StyleSheet.create({
     }),
   },
 
-  // Nav
-  topNav: {
-    paddingTop: 12,
-    paddingBottom: 4,
-  },
+  // Nav (back button style reused)
   backBtn: {
     width: 38,
     height: 38,

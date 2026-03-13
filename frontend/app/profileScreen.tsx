@@ -225,7 +225,7 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
 
   const handleReorder = (): void => {
     router.push({
-      pathname: '/ReorderScreen',
+      pathname: '/orders',
       params: { userLanguage: currentLanguage }
     });
   };
@@ -240,9 +240,6 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
   // Update the handleLogout function
   const handleLogout = async (): Promise<void> => {
     await logout(); // This now comes from useAuth()
-    // No need to call router.replace here because the logout function in AuthContext
-    // doesn't handle navigation. Let's add navigation:
-    router.replace('/signin');
   };
 
   const handleLoyaltyRewards = () => {

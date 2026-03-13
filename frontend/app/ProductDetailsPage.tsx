@@ -1,31 +1,31 @@
+import Colors from '@/constants/Colors';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { router, useLocalSearchParams } from 'expo-router';
-import Colors from '@/constants/Colors';
 import React, { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  Image,
-  TouchableOpacity,
-  TextInput,
-  ScrollView,
-  StyleSheet,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
+  Image,
+  KeyboardAvoidingView,
   Platform,
-  KeyboardAvoidingView
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { RefreshControl } from 'react-native';
-import { addItem, updateItemQuantity, updateSpecialInstructions } from './redux/slices/orderSlice';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useDispatch, useSelector } from 'react-redux';
-import { RootState } from './redux/store';
-import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRestaurantStatus } from '../contexts/RestaurantStatusContext';
 import { RestaurantClosedBanner } from '../components/RestaurantClosedBanner';
+import { useRestaurantStatus } from '../contexts/RestaurantStatusContext';
+import { addItem, updateItemQuantity, updateSpecialInstructions } from './redux/slices/orderSlice';
+import { RootState } from './redux/store';
 
 interface AddonsState {
   extraCheese: boolean;
@@ -86,6 +86,18 @@ const RED = '#EF4444';
 const GRAY_TEXT = '#9B8B7A';
 const BORDER_COLOR = '#E8DDD4';
 
+// Helper to round price according to the rule:
+// - fractional part < 0.5 → integer + 0.5
+// - fractional part ≥ 0.5 → integer + 1
+// - exact integer stays integer
+const roundPrice = (price: number): number => {
+  const intPart = Math.floor(price);
+  const fracPart = price - intPart;
+  if (fracPart === 0) return price;          // keep integer
+  if (fracPart < 0.5) return intPart + 0.5;  // up to .5
+  return Math.ceil(price);                   // round up
+};
+
 const BurgerOrderScreen: React.FC<ProductDetailsPageProps> = ({
   userLanguage = 'english',
 }) => {
@@ -134,16 +146,27 @@ const BurgerOrderScreen: React.FC<ProductDetailsPageProps> = ({
 
   const getBasePrice = (): number => {
     if (!selectedItem) return 0;
+
     const originalPrice = selectedItem.original_price || selectedItem.price || 0;
     let finalPrice = selectedItem.final_price;
+
     if (finalPrice === null || finalPrice === undefined || finalPrice <= 0) {
       finalPrice = originalPrice;
     }
+
     const hasDiscount = selectedItem.discount_applied && finalPrice < originalPrice;
     const hasPromo = selectedItem.promo && selectedItem.promoValue && !hasDiscount;
-    if (hasDiscount) return Math.round(finalPrice);
-    if (hasPromo) return Math.round(originalPrice * (1 - (selectedItem.promoValue || 0) / 100));
-    return Math.round(originalPrice);
+
+    let calculatedPrice: number;
+    if (hasDiscount) {
+      calculatedPrice = finalPrice;
+    } else if (hasPromo) {
+      calculatedPrice = originalPrice * (1 - (selectedItem.promoValue || 0) / 100);
+    } else {
+      calculatedPrice = originalPrice;
+    }
+
+    return roundPrice(calculatedPrice);
   };
 
   const calculateTotal = (): string => {
@@ -292,31 +315,30 @@ const BurgerOrderScreen: React.FC<ProductDetailsPageProps> = ({
   const renderPriceDisplay = () => {
     if (!selectedItem) return null;
     const originalPrice = selectedItem.original_price || selectedItem.price || 0;
-    let finalPrice = selectedItem.final_price;
-    if (finalPrice === null || finalPrice === undefined || finalPrice <= 0) finalPrice = originalPrice;
-    const hasDiscount = selectedItem.discount_applied && finalPrice < originalPrice;
+    const basePrice = getBasePrice(); // already rounded
+
+    const hasDiscount = selectedItem.discount_applied;
     const hasPromo = selectedItem.promo && selectedItem.promoValue && !hasDiscount;
 
     if (hasDiscount) {
       return (
         <View style={newStyles.priceBlock}>
-          <Text style={newStyles.priceDiscounted}>{Math.round(finalPrice)} <Text style={newStyles.priceCurrency}>MAD</Text></Text>
+          <Text style={newStyles.priceDiscounted}>{basePrice} <Text style={newStyles.priceCurrency}>MAD</Text></Text>
           <Text style={newStyles.priceStrike}>{Math.round(originalPrice)} MAD</Text>
         </View>
       );
     }
     if (hasPromo) {
-      const discountedPrice = Math.round(originalPrice * (1 - (selectedItem.promoValue || 0) / 100));
       return (
         <View style={newStyles.priceBlock}>
-          <Text style={newStyles.pricePromo}>{discountedPrice} <Text style={newStyles.priceCurrency}>MAD</Text></Text>
+          <Text style={newStyles.pricePromo}>{basePrice} <Text style={newStyles.priceCurrency}>MAD</Text></Text>
           <Text style={newStyles.priceStrike}>{Math.round(originalPrice)} MAD</Text>
         </View>
       );
     }
     return (
       <View style={newStyles.priceBlock}>
-        <Text style={newStyles.priceMain}>{Math.round(originalPrice)} <Text style={newStyles.priceCurrency}>MAD</Text></Text>
+        <Text style={newStyles.priceMain}>{basePrice} <Text style={newStyles.priceCurrency}>MAD</Text></Text>
       </View>
     );
   };
@@ -494,16 +516,6 @@ const BurgerOrderScreen: React.FC<ProductDetailsPageProps> = ({
               />
               <Text style={newStyles.charCount}>{specialInstructions.length}/200</Text>
             </View>
-
-            {/* ── From Our Kitchen Story Card ── */}
-            <View style={newStyles.storyCard}>
-              <Text style={newStyles.storyTitle}>From Our Kitchen</Text>
-              <Text style={newStyles.storyText}>
-                This dish is prepared with the finest ingredients and the same care we'd give to our own family. Every order is made fresh, just for you.
-              </Text>
-            </View>
-
-
             {/* Restaurant closed banner */}
             {!restaurantIsOpen && (
               <RestaurantClosedBanner compact={true} showHoursButton={false} userLanguage={userLanguage} />
@@ -754,12 +766,11 @@ const newStyles = StyleSheet.create({
   priceDiscounted: {
     fontSize: 24,
     fontWeight: '900',
-    color: GREEN,
   },
   pricePromo: {
     fontSize: 24,
     fontWeight: '900',
-    color: RED,
+    color: AMBER,
   },
   priceCurrency: {
     fontSize: 16,

@@ -1,23 +1,23 @@
 import type { Product } from '@/app/redux/slices/homeSlice';
+import { addItem, updateItemQuantity } from '@/app/redux/slices/orderSlice';
+import type { RootState } from '@/app/redux/store';
 import Colors from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
+import axios from 'axios';
 import * as Haptics from 'expo-haptics';
-import React, { memo, useEffect, useState, useCallback } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import {
+    Alert,
     Image,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
-    Alert,
 } from 'react-native';
-import { useDispatch, useSelector } from 'react-redux';
-import type { RootState } from '@/app/redux/store';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
 import Toast from 'react-native-toast-message';
-import { useFocusEffect } from '@react-navigation/native';
-import { addItem, updateItemQuantity } from '@/app/redux/slices/orderSlice';
+import { useDispatch, useSelector } from 'react-redux';
 
 interface ProductCardProps {
     product: Product;
@@ -55,22 +55,41 @@ const ProductCard = memo<ProductCardProps>(({
     const [internalIsFavorite, setInternalIsFavorite] = useState(false);
     const isFavorite = externalIsFavorite !== undefined ? externalIsFavorite : internalIsFavorite;
 
-    // Price calculation (same as PopularProductCard)
-    let displayPrice: number;
-    let displayOldPrice: number | undefined;
-    let showDiscount: boolean;
+    // ─── Price calculation (ceil to nearest 0.5) ──────────────────────────────
+    const roundPrice = (num: number) => {
+        return Math.ceil(num * 2) / 2;
+    };
 
-    if (product.promo && product.promoValue) {
-        const original = product.price || 0;
-        const discountAmount = original * (product.promoValue / 100);
-        displayPrice = Math.max(original - discountAmount, 0);
-        displayOldPrice = original;
-        showDiscount = true;
-    } else {
-        displayPrice = product.final_price || product.price;
-        displayOldPrice = product.original_price;
-        showDiscount = product.discount_applied ?? false;
-    }
+    const calculateProductPrice = (product: Product) => {
+        const originalPrice = product.original_price || product.price || 0;
+        let finalPrice = product.final_price;
+        if (finalPrice === null || finalPrice === undefined || finalPrice <= 0) {
+            finalPrice = originalPrice;
+        }
+        const hasDiscount = product.discount_applied && finalPrice < originalPrice;
+        const hasPromo = product.promo && product.promoValue && !hasDiscount;
+        let displayPrice: number;
+        let displayOldPrice: number | undefined;
+        let showDiscount: boolean;
+
+        if (hasDiscount) {
+            displayPrice = roundPrice(finalPrice);
+            displayOldPrice = originalPrice;
+            showDiscount = true;
+        } else if (hasPromo) {
+            const discounted = originalPrice * (1 - (product.promoValue || 0) / 100);
+            displayPrice = roundPrice(discounted);
+            displayOldPrice = originalPrice;
+            showDiscount = true;
+        } else {
+            displayPrice = roundPrice(originalPrice);
+            displayOldPrice = undefined;
+            showDiscount = false;
+        }
+        return { displayPrice, displayOldPrice, showDiscount };
+    };
+
+    const { displayPrice, displayOldPrice, showDiscount } = calculateProductPrice(product);
 
     // Favorite check (internal mode only)
     const checkFavoriteStatus = useCallback(async () => {
@@ -300,6 +319,12 @@ const ProductCard = memo<ProductCardProps>(({
                     <Ionicons name="star" size={12} color="#FFB800" />
                     <Text style={styles.ratingText}>{product.rating || 4.8}</Text>
                 </View>
+                {/* Promo badge */}
+                {product.promo && product.promoValue && (
+                    <View style={[styles.promoBadge, isRTL && styles.promoBadgeRTL]}>
+                        <Text style={styles.promoBadgeText}>-{Math.round(product.promoValue)}%</Text>
+                    </View>
+                )}
             </View>
             <View style={styles.infoContainer}>
                 <View style={[styles.titleRow, { flexDirection: isRTL ? 'row' : 'row-reverse' }]}>
@@ -307,12 +332,12 @@ const ProductCard = memo<ProductCardProps>(({
                         {product.name}
                     </Text>
                     <Text style={styles.priceText}>
-                        {Math.round(displayPrice)} <Text style={styles.currency}>MAD</Text>
+                        {displayPrice} <Text style={styles.currency}>MAD</Text>
                     </Text>
                 </View>
                 {showDiscount && displayOldPrice && (
                     <Text style={[styles.oldPrice, { textAlign: isRTL ? 'left' : 'right' }]}>
-                        {Math.round(displayOldPrice)} MAD
+                        {displayOldPrice} MAD
                     </Text>
                 )}
                 <Text style={[styles.description, { textAlign: isRTL ? 'left' : 'right' }]} numberOfLines={2}>
@@ -320,7 +345,7 @@ const ProductCard = memo<ProductCardProps>(({
                 </Text>
                 <View style={[styles.metaRow, { flexDirection: isRTL ? 'row' : 'row-reverse' }]}>
                     <View style={[styles.deliveryInfo, { flexDirection: isRTL ? 'row' : 'row-reverse' }]}>
-                        <Text style={styles.deliveryText}>{product.delivery || '35-45 min'}</Text>
+                        <Text style={styles.deliveryText}>{`${product.delivery} min` || '35-45 min'}</Text>
                         <Ionicons name="bicycle" size={16} color="#999" />
                     </View>
                     {renderCartButton()}
@@ -416,6 +441,25 @@ const styles = StyleSheet.create({
     ratingBadgeRTL: {
         left: 'auto',
         right: 12,
+    },
+    promoBadge: {
+        position: 'absolute',
+        bottom: 12,
+        right: 12,
+        backgroundColor: '#E0E0E0',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+        zIndex: 5,
+    },
+    promoBadgeRTL: {
+        right: 'auto',
+        left: 12,
+    },
+    promoBadgeText: {
+        color: '#333',
+        fontSize: 11,
+        fontWeight: 'bold',
     },
     ratingText: { color: '#333', fontSize: 12, fontWeight: 'bold' },
     infoContainer: {
