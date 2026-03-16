@@ -154,7 +154,7 @@ export const login = async (req, res) => {
         role: admin.role || 'admin'
       },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "36500d" }
     );
 
     // ✅ CRITICAL: Update BOTH last_login AND api_token in the database
@@ -224,7 +224,7 @@ export const login = async (req, res) => {
         name: client.name,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" } // you can adjust expiration
+      { expiresIn: "36500d" } // you can adjust expiration
     );
 
     // 🧩 7. Send response
@@ -366,7 +366,7 @@ export const resetPassword = async (req, res) => {
         name: client.name,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "36500d" }
     );
     
     return res.status(200).json({
@@ -510,7 +510,7 @@ export const deliveryManLogin = async (req, res) => {
         name: deliveryMan.name,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" } // you can adjust expiration
+      { expiresIn: "36500d" } // you can adjust expiration
     );
     // 🧩 7. Send response
     return res.status(200).json({
@@ -575,7 +575,7 @@ export const loginWithPhone = async (req, res) => {
         name: client.name,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "36500d" }
     );
     // 🧩 7. Send response
     return res.status(200).json({
@@ -1608,7 +1608,7 @@ export const loginWithGoogle = async (req, res) => {
         name: clientData.name,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "36500d" }
     );
 
     // 🧩 8. Send response

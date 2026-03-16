@@ -1,12 +1,16 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { registerForPushNotificationsAsync } from "@/utils/notifications";
-import { Ionicons } from '@expo/vector-icons';
+import { FontAwesome, Ionicons } from '@expo/vector-icons';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from '@react-navigation/native';
 import * as Haptics from 'expo-haptics';
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from 'react';
+import {
+  GoogleSignin,
+  statusCodes
+} from '@react-native-google-signin/google-signin';
 import {
   ActivityIndicator,
   Alert,
@@ -293,6 +297,7 @@ const SignIn: React.FC = () => {
   const [rememberMe, setRememberMe] = useState(false);
   const [countryCode, setCountryCode] = useState('+212');
   const { login } = useAuth();
+  const [loadingGoogle, setLoadingGoogle] = useState(false);
 
   // ── Language state ───────────────────────────────────────────────────────
   const [currentLanguage, setCurrentLanguage] = useState<'english' | 'arabic' | 'french'>('english');
@@ -438,6 +443,98 @@ const SignIn: React.FC = () => {
       setLoading(false);
     }
   };
+
+  
+      useEffect(() => {
+        GoogleSignin.configure({
+          scopes: ['https://www.googleapis.com/auth/userinfo.email'],
+          webClientId: '158740940579-ificug8hbe28n6kjjchj3ml53f29u9ka.apps.googleusercontent.com',
+          iosClientId: '158740940579-q1ljk05bp6iddbg435jofeddo2tlsl7p.apps.googleusercontent.com',
+  
+          offlineAccess: true,
+        });
+      }, []);
+  
+  
+      const handleGoogleSignIn = async () => {
+        try {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          setLoadingGoogle(true);
+  
+          // Check if device has Google Play services (Android only)
+          await GoogleSignin.hasPlayServices();
+  
+          // Sign in with Google
+          const googleResponse = await GoogleSignin.signIn();
+  
+          console.log('Google Sign-In Success:', googleResponse);
+  
+          // Get the ID token - different method
+          const tokens = await GoogleSignin.getTokens();
+          const idToken = tokens.idToken;
+  
+          if (!idToken) {
+            throw new Error('No ID token received from Google');
+          }
+  
+          // Extract user info - using non-null assertion since we know it exists
+          const userInfo = (googleResponse as any).user || (googleResponse as any).data?.user;
+  
+          if (!userInfo || !userInfo.email) {
+            throw new Error('No user info received from Google');
+          }
+  
+          // Send token to your backend for verification
+          const response = await fetch("https://haba-haba-api.ubua.cloud/api/auth/google-login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              idToken,
+              email: userInfo.email,
+              name: userInfo.name || userInfo.givenName,
+              photo: userInfo.photo,
+            }),
+          });
+  
+          const data = await response.json();
+  
+          if (!response.ok) {
+            throw new Error(data.message || "Google login failed");
+          }
+  
+          // Save user data
+          await AsyncStorage.setItem("token", data.token);
+          await AsyncStorage.setItem("client", JSON.stringify(data.client));
+          await login();
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          const clientId = data.client && data.client.id;
+          if (clientId) {
+            await registerForPushNotificationsAsync("client", clientId);
+          } else {
+            console.error('No client ID found in response!');
+          }
+  
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          router.push("/");
+  
+        } catch (error: any) {
+          console.error('Google Sign-In Error:', error);
+  
+          if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+            Alert.alert('Cancelled', 'Sign in was cancelled');
+          } else if (error.code === statusCodes.IN_PROGRESS) {
+            Alert.alert('In Progress', 'Sign in is already in progress');
+          } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+            Alert.alert('Play Services', 'Google Play services not available');
+          } else {
+            Alert.alert('Error', error.message || 'Google sign in failed');
+          }
+  
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        } finally {
+          setLoadingGoogle(false);
+        }
+      };
 
   // ── Tab indicator animation with RTL support ─────────────────────────────
   const tabIndicatorStyle = useAnimatedStyle(() => ({
@@ -594,6 +691,32 @@ const SignIn: React.FC = () => {
             <Text style={[s.dividerText, isRTL && s.textRTL]}>{t(translations.or)}</Text>
             <View style={s.dividerLine} />
           </Animated.View>
+
+          
+              {/* Social Logins */}
+              <Animated.View
+                entering={FadeInDown.delay(700).springify()}
+                style={s.socialLoginContainer}
+              >
+                {/* Google Sign-In Button */}
+                <TouchableOpacity
+                  style={[s.socialButton, { marginRight: 8 }]}
+                  activeOpacity={0.7}
+                  disabled={loading}
+                  onPress={handleGoogleSignIn}
+                >
+                  <FontAwesome
+                    name="google"
+                    size={20}
+                    color={'#DB4437'}
+                  />
+                  <Text style={s.socialButtonText}>
+                    {loadingGoogle ? 'Signing in...' : 'Google'}
+                  </Text>
+                </TouchableOpacity>
+              </Animated.View>
+
+
           {/* Sign up row – RTL order: text on right, link on left */}
           <Animated.View entering={FadeInDown.delay(620).springify()}>
             {isRTL ? (
@@ -688,6 +811,20 @@ const SignIn: React.FC = () => {
 
 // ─── Styles ─────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
+  socialButtonAr: {
+    flexDirection: 'row-reverse',
+  },
+  socialButtonText: {
+    marginLeft: 10,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  socialButtonTextAr: {
+    marginLeft: 0,
+    marginRight: 10,
+    textAlign: 'right',
+  },
   safe: {
     flex: 1,
     backgroundColor: C.bg,
@@ -852,6 +989,32 @@ const s = StyleSheet.create({
     fontSize: 15,
     color: C.text,
     padding: 0,
+  },
+  socialButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 52,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  socialLoginContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   inputRTL: {
     textAlign: 'right',

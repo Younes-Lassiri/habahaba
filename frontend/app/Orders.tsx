@@ -261,7 +261,6 @@ export default function OrdersScreen() {
       const res = await axios.get(`https://haba-haba-api.ubua.cloud/api/auth/get-orders`, {
         params: { user_id: user.id },
       });
-      console.log('check orders zap: ', res.data.orders[0])
       const transformedOrders = (res.data.orders || []).map((order: any) => {
         const orderDate = new Date(order.created_at);
         const now = new Date();

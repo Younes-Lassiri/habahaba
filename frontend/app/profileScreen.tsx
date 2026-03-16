@@ -183,8 +183,6 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
       }
     });
     
-    console.log('zap: ', res.data.stats.clientmemberSince)
-
     // 3. Process the data returned from your getProfileStats controller
     // Note: Based on the controller we built, the data is in res.data.stats
     const { deliveredOrders, favorites, clientmemberSince } = res.data.stats;

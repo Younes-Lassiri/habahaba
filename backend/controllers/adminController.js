@@ -370,7 +370,6 @@ export const getPromotionsAnalytics = async (req, res) => {
        ORDER BY usage_count DESC`
     );
 
-    connection.release();
     return res.status(200).json({
       total_promotions: parseInt(total_promotions || 0),
       active_promotions: parseInt(active_promotions || 0),
@@ -457,7 +456,6 @@ export const bulkUpdateOrderStatus = async (req, res) => {
     if (status === 'Delivered') updateQuery += `, delivered_at = COALESCE(delivered_at, NOW())`;
     updateQuery += ` WHERE id IN (${placeholders})`;
     await connection.execute(updateQuery, [status, ...orderIds]);
-    connection.release();
     return res.status(200).json({ message: 'Orders updated' });
   } catch (error) {
     console.error('❌ Bulk update order status error:', error.message);
@@ -476,7 +474,6 @@ export const updateOrderPaymentStatus = async (req, res) => {
     if (!allowed.includes(payment_status)) return res.status(400).json({ message: 'Invalid payment status' });
     connection = await pool.getConnection();
     await connection.execute(`UPDATE orders SET payment_status = ?, updated_at = NOW() WHERE id = ?`, [payment_status, id]);
-    connection.release();
     return res.status(200).json({ message: 'Payment status updated' });
   } catch (error) {
     console.error('❌ Update order payment status error:', error.message);
@@ -493,7 +490,6 @@ export const cancelOrder = async (req, res) => {
     const { reason } = req.body;
     connection = await pool.getConnection();
     await connection.execute(`UPDATE orders SET status = 'Cancelled', cancel_reason = ?, updated_at = NOW() WHERE id = ?`, [reason || null, id]);
-    connection.release();
     return res.status(200).json({ message: 'Order cancelled' });
   } catch (error) {
     console.error('❌ Cancel order error:', error.message);
@@ -545,7 +541,6 @@ export const getRevenueReport = async (req, res) => {
       ? ((parseFloat(currentMonthRevenue) - parseFloat(lastMonthRevenue)) / parseFloat(lastMonthRevenue)) * 100
       : 0;
 
-    connection.release();
     return res.status(200).json({
       dailyRevenue,
       totalRevenue,
@@ -626,7 +621,6 @@ export const getOrdersReport = async (req, res) => {
 
     const averageOrderValue = totalOrders > 0 ? parseFloat(totalRevenue) / parseInt(totalOrders) : 0;
 
-    connection.release();
     return res.status(200).json({
       totalOrders: parseInt(totalOrders || 0),
       averageOrderValue,
@@ -763,7 +757,6 @@ export const getOrderRatings = async (req, res) => {
 
     const [[{ total }]] = await connection.execute(countQuery, countParams);
 
-    connection.release();
     return res.status(200).json({
       ratings,
       total: parseInt(total || 0), // Return total count for reference
@@ -931,8 +924,6 @@ export const getAllOffers = async (req, res) => {
     GROUP BY o.id
     ORDER BY o.created_at DESC`
     );
-
-    connection.release();
     return res.status(200).json({ offers });
   } catch (error) {
     console.error("❌ Get all offers error:", error.message);
@@ -964,7 +955,6 @@ export const getActiveOffers = async (req, res) => {
        ORDER BY o.created_at DESC`
     );
 
-    connection.release();
     return res.status(200).json({ offers });
   } catch (error) {
     console.error("❌ Get active offers error:", error.message);
@@ -987,7 +977,6 @@ export const getOfferDetails = async (req, res) => {
     );
 
     if (!offer) {
-      connection.release();
       return res.status(404).json({ message: "Offer not found" });
     }
 
@@ -1017,8 +1006,6 @@ export const getOfferDetails = async (req, res) => {
        ORDER BY ou.used_at DESC`,
       [id]
     );
-
-    connection.release();
     return res.status(200).json({ offer, products, usage });
   } catch (error) {
     console.error("❌ Get offer details error:", error.message);
@@ -1219,7 +1206,6 @@ export const getTopProducts = async (req, res) => {
       [] // <--- FIXED: Empty parameter array
     );
 
-    connection.release();
     return res.status(200).json({ products });
   } catch (error) {
     console.error("❌ Get top products error:", error.message);
@@ -1254,7 +1240,6 @@ export const getTopClients = async (req, res) => {
       [] // <--- FIXED: Empty parameter array
     );
 
-    connection.release();
     return res.status(200).json({ clients });
   } catch (error) {
     console.error("❌ Get top clients error:", error.message);
@@ -1294,7 +1279,6 @@ export const getDeliveredOrders = async (req, res) => {
       [] // <--- FIXED: Empty parameter array
     );
 
-    connection.release();
     return res.status(200).json({ orders });
   } catch (error) {
     console.error("❌ Get delivered orders error:", error.message);
@@ -1347,7 +1331,6 @@ export const getDeliveryPerformance = async (req, res) => {
       ? (completion[0].completed / completion[0].total) * 100
       : 0;
 
-    connection.release();
     return res.status(200).json({
       avgDeliveryTimeMinutes: avgTime[0].avgDeliveryTimeMinutes || 0,
       completionRate: completionRate,
@@ -1388,7 +1371,6 @@ export const getActiveDeliveries = async (req, res) => {
       ORDER BY o.created_at DESC`
     );
 
-    connection.release();
     return res.status(200).json({ deliveries });
   } catch (error) {
     console.error("❌ Get active deliveries error:", error.message);
@@ -1436,7 +1418,6 @@ export const getAllOrdersForMap = async (req, res) => {
 
     const [orders] = await connection.execute(query, params);
 
-    connection.release();
     return res.status(200).json({ orders });
   } catch (error) {
     console.error("❌ Get all orders for map error:", error.message);
@@ -1528,7 +1509,6 @@ export const getHourlyPerformance = async (req, res) => {
       WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)`
     );
 
-    connection.release();
     return res.status(200).json({
       hourlyData: allHoursData,
       peakHours: peakHours,
@@ -1581,7 +1561,6 @@ export const getRevenueTrends = async (req, res) => {
       ? ((currentMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100
       : 0;
 
-    connection.release();
     return res.status(200).json({
       dailyRevenue: dailyRevenue,
       currentMonth: currentMonthRevenue,
@@ -1740,7 +1719,6 @@ export const updateOrderStatus = async (req, res) => {
     );
 
     if (orders.length === 0) {
-      connection.release();
       return res.status(404).json({ message: "Order not found" });
     }
 
@@ -1845,13 +1823,13 @@ export const updateOrderStatus = async (req, res) => {
       await notifyDeliveryMan(content[status].en.t, content[status].en.m);
     }
 
-    connection.release();
     return res.status(200).json({ message: "Order status updated successfully", notification_sent: true });
 
   } catch (error) {
     console.error("❌ Update order status error:", error.message);
-    if (connection) connection.release();
     return res.status(500).json({ message: "Server error" });
+  }finally {
+    if (connection) connection.release();
   }
 };
 
@@ -1870,7 +1848,6 @@ export const assignDeliveryMan = async (req, res) => {
       [deliveryManId]
     );
     if (deliveryMen.length === 0) {
-      connection.release();
       return res.status(404).json({ message: "Delivery man not found or inactive" });
     }
     const deliveryMan = deliveryMen[0];
@@ -1885,7 +1862,6 @@ export const assignDeliveryMan = async (req, res) => {
     );
     
     if (orders.length === 0) {
-      connection.release();
       return res.status(404).json({ message: "Order not found" });
     }
     const order = orders[0];
@@ -1990,7 +1966,6 @@ export const assignDeliveryMan = async (req, res) => {
       notifyDeliveryManAssignment()
     ]);
 
-    connection.release();
     return res.status(200).json({
       message: "Delivery man assigned successfully",
       notification_sent: true
@@ -1998,8 +1973,9 @@ export const assignDeliveryMan = async (req, res) => {
 
   } catch (error) {
     console.error("❌ Assign delivery man error:", error.message);
-    if (connection) connection.release();
     return res.status(500).json({ message: "Server error" });
+  }finally {
+    if (connection) connection.release();
   }
 };
 
@@ -2028,7 +2004,6 @@ export const updateOrder = async (req, res) => {
     );
 
     if (orders.length === 0) {
-      connection.release();
       return res.status(404).json({ message: "Order not found" });
     }
 
@@ -2040,7 +2015,6 @@ export const updateOrder = async (req, res) => {
 
     if (status !== undefined) {
       if (!['Pending', 'Preparing', 'OutForDelivery', 'Delivered', 'Cancelled'].includes(status)) {
-        connection.release();
         return res.status(400).json({ message: "Invalid status" });
       }
       updates.push("status = ?");
@@ -2181,13 +2155,13 @@ export const updateOrder = async (req, res) => {
       await Promise.all(statusNotifications);
     }
 
-    connection.release();
     return res.status(200).json({ message: "Order updated successfully", notification_sent: true });
 
   } catch (error) {
     console.error("❌ Update error:", error.message);
-    if (connection) connection.release();
     return res.status(500).json({ message: "Server error" });
+  }finally {
+    if (connection) connection.release();
   }
 };
 
@@ -2243,8 +2217,6 @@ export const handleNewOrder = async (req, res) => {
       },
       sendPush: true
     });
-
-    connection.release();
 
     return res.status(200).json({
       message: "Order created and notifications sent",
@@ -2464,7 +2436,6 @@ export const getClientActivity = async (req, res) => {
       }
     });
 
-    connection.release();
     return res.status(200).json({ activity });
   } catch (error) {
     console.error("❌ Get client activity error:", error.message);
@@ -2496,8 +2467,6 @@ export const getClientFavorites = async (req, res) => {
        ORDER BY f.created_at DESC`,
       [id]
     );
-
-    connection.release();
     return res.status(200).json({ favorites: favorites || [] });
   } catch (error) {
     console.error("❌ Get client favorites error:", error.message);
@@ -2520,7 +2489,6 @@ export const deleteClientFavorite = async (req, res) => {
     );
 
     if (favorites.length === 0) {
-      connection.release();
       return res.status(404).json({ message: "Favorite not found" });
     }
 
@@ -2964,8 +2932,6 @@ export const getDeliveryManPerformance = async (req, res) => {
       "SELECT COALESCE(SUM(final_price), 0) as total FROM orders WHERE delivery_man_id = ? AND status = 'Delivered'",
       [id]
     );
-
-    connection.release();
     return res.status(200).json({
       totalOrders: totalOrders[0].count,
       completedOrders: completedOrders[0].count,
@@ -3017,7 +2983,6 @@ export const getDeliveryManEarnings = async (req, res) => {
     const totalRevenue = parseFloat(summary[0].totalRevenue || 0);
     const averagePerOrder = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
-    connection.release();
     return res.status(200).json({
       earnings: dailyEarnings,
       summary: {
@@ -3108,8 +3073,6 @@ export const getDeliveryManLocationHistory = async (req, res) => {
     );
 
     locations.push(...orderLocations);
-
-    connection.release();
     return res.status(200).json({
       delivery_man: deliveryMan[0],
       locations,
@@ -3494,7 +3457,7 @@ export const createProduct = async (req, res) => {
 
     const [result] = await connection.execute(
       `INSERT INTO products (name, description, price, rating, image, category_id, delivery, promo, promoValue, badge, is_popular, best_for, active, for_cart)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name,
         description || null,
@@ -3682,7 +3645,6 @@ export const bulkUpdateProducts = async (req, res) => {
     }
 
     if (updateFields.length === 0) {
-      connection.release();
       return res.status(400).json({ message: "No valid fields to update" });
     }
 
@@ -3693,8 +3655,6 @@ export const bulkUpdateProducts = async (req, res) => {
       `UPDATE products SET ${updateFields.join(", ")} WHERE id IN (${placeholders})`,
       params
     );
-
-    connection.release();
     return res.status(200).json({
       message: `${product_ids.length} product(s) updated successfully`,
       updated_count: product_ids.length
@@ -3777,7 +3737,6 @@ export const getAllPromoCodes = async (req, res) => {
       })
     );
 
-    connection.release();
     return res.status(200).json({ promoCodes: promoCodesWithOrders });
   } catch (error) {
     console.error("❌ Get all promo codes error:", error.message);
@@ -3807,7 +3766,6 @@ export const getPromoCodeDetails = async (req, res) => {
     );
 
     if (codes.length === 0) {
-      connection.release();
       return res.status(404).json({ message: "Promo code not found" });
     }
 
@@ -3822,7 +3780,6 @@ export const getPromoCodeDetails = async (req, res) => {
       [id]
     );
 
-    connection.release();
     return res.status(200).json({
       promoCode: {
         ...codes[0],
@@ -3874,7 +3831,6 @@ export const createPromoCode = async (req, res) => {
 
     if (existing.length > 0) {
       await connection.rollback();
-      connection.release();
       return res.status(400).json({ message: "Promo code already exists" });
     }
 
@@ -3892,7 +3848,6 @@ export const createPromoCode = async (req, res) => {
 
     if (overlapping.length > 0) {
       await connection.rollback();
-      connection.release();
       return res.status(400).json({
         message: `Overlapping date range with existing code: ${overlapping[0].code}`
       });
@@ -4036,7 +3991,6 @@ export const updatePromoCode = async (req, res) => {
     );
 
     if (existing.length === 0) {
-      connection.release();
       return res.status(404).json({ message: "Promo code not found" });
     }
 
@@ -4048,7 +4002,6 @@ export const updatePromoCode = async (req, res) => {
       );
 
       if (duplicate.length > 0) {
-        connection.release();
         return res.status(400).json({ message: "Promo code already exists" });
       }
     }
@@ -4110,7 +4063,6 @@ export const updatePromoCode = async (req, res) => {
     }
 
     if (updateFields.length === 0) {
-      connection.release();
       return res.status(400).json({ message: "No fields to update" });
     }
 
@@ -4121,7 +4073,6 @@ export const updatePromoCode = async (req, res) => {
       params
     );
 
-    connection.release();
     return res.status(200).json({ message: "Promo code updated successfully" });
   } catch (error) {
     console.error("❌ Update promo code error:", error.message);
@@ -4145,7 +4096,6 @@ export const deletePromoCode = async (req, res) => {
     );
 
     if (usage[0].count > 0) {
-      connection.release();
       return res.status(400).json({
         message: "Cannot delete promo code that has been used. Deactivate it instead.",
       });
@@ -4153,7 +4103,6 @@ export const deletePromoCode = async (req, res) => {
 
     await connection.execute("DELETE FROM promo_codes WHERE id = ?", [id]);
 
-    connection.release();
     return res.status(200).json({ message: "Promo code deleted successfully" });
   } catch (error) {
     console.error("❌ Delete promo code error:", error.message);
@@ -4197,7 +4146,6 @@ export const bulkUpdatePromoCodes = async (req, res) => {
 
     await connection.execute(updateQuery + placeholders + ")", params);
 
-    connection.release();
     return res.status(200).json({
       message: `${promo_code_ids.length} promo code(s) ${action}d successfully`,
       updated_count: promo_code_ids.length,
@@ -4224,8 +4172,6 @@ export const recalculatePromoUsage = async (req, res) => {
          WHERE opc.promo_code_id = pc.id
        )`
     );
-
-    connection.release();
     return res.status(200).json({ message: "Usage counts recalculated successfully" });
   } catch (error) {
     console.error("❌ Recalculate promo usage error:", error.message);
@@ -4293,7 +4239,6 @@ export const getRestaurantSettings = async (req, res) => {
     if (settings.length === 0) {
       return res.status(404).json({ message: "Restaurant settings not found" });
     }
-    connection.release();
     res.json({
       success: true,
       settings: {
@@ -4311,8 +4256,9 @@ export const getRestaurantSettings = async (req, res) => {
     console.log(res.json);
   } catch (error) {
     console.error("Error fetching restaurant settings:", error);
-    if (connection) connection.release();
     res.status(500).json({ message: "Server error" });
+  }finally {
+    if (connection) connection.release();
   }
 };
 // Update restaurant settings
@@ -4412,7 +4358,6 @@ export const updateRestaurantSettings = async (req, res) => {
     }
 
     if (updates.length === 0) {
-      connection.release();
       return res.status(400).json({ message: "No fields to update" });
     }
 
@@ -4487,7 +4432,6 @@ export const updateRestaurantSettings = async (req, res) => {
       LIMIT 1`
     );
 
-    connection.release();
     res.json({
       success: true,
       message: "Restaurant settings updated successfully",
@@ -4505,8 +4449,9 @@ export const updateRestaurantSettings = async (req, res) => {
     });
   } catch (error) {
     console.error("Error updating restaurant settings:", error);
-    if (connection) connection.release();
     res.status(500).json({ message: "Server error" });
+  }finally {
+    if (connection) connection.release();
   }
 };
 
@@ -4551,7 +4496,6 @@ export const uploadRestaurantLogoHandler = async (req, res) => {
       [logoPath]
     );
 
-    connection.release();
     res.json({
       success: true,
       message: "Restaurant logo uploaded successfully",
@@ -4559,7 +4503,6 @@ export const uploadRestaurantLogoHandler = async (req, res) => {
     });
   } catch (error) {
     console.error("Error uploading restaurant logo:", error);
-    if (connection) connection.release();
 
     // Delete uploaded file if error occurred
     if (req.file && fs.existsSync(req.file.path)) {
@@ -4567,6 +4510,8 @@ export const uploadRestaurantLogoHandler = async (req, res) => {
     }
 
     res.status(500).json({ message: "Server error" });
+  }finally {
+    if (connection) connection.release();
   }
 };
 
@@ -4587,7 +4532,6 @@ export const uploadRestaurantIconHandler = async (req, res) => {
       [iconPath]
     );
 
-    connection.release();
     res.json({
       success: true,
       message: "Restaurant home screen icon uploaded successfully",
@@ -4595,7 +4539,6 @@ export const uploadRestaurantIconHandler = async (req, res) => {
     });
   } catch (error) {
     console.error("Error uploading restaurant icon:", error);
-    if (connection) connection.release();
 
     // Delete uploaded file if error occurred
     if (req.file && fs.existsSync(req.file.path)) {
@@ -4603,6 +4546,8 @@ export const uploadRestaurantIconHandler = async (req, res) => {
     }
 
     res.status(500).json({ message: "Server error" });
+  }finally {
+    if (connection) connection.release();
   }
 };
 
@@ -5050,7 +4995,6 @@ export const updateOffer = async (req, res) => {
 
     if (existingOffer.length === 0) {
       await connection.rollback();
-      connection.release();
       return res.status(404).json({ message: "Offer not found" });
     }
 
@@ -5099,7 +5043,6 @@ export const updateOffer = async (req, res) => {
     }
 
     await connection.commit();
-    connection.release();
 
     return res.status(200).json({
       message: "Offer updated successfully",
@@ -5143,7 +5086,6 @@ export const deleteOffer = async (req, res) => {
 
     if (existingOffer.length === 0) {
       await connection.rollback();
-      connection.release();
       return res.status(404).json({ message: "Offer not found" });
     }
 
@@ -5171,7 +5113,6 @@ export const deleteOffer = async (req, res) => {
     );
 
     await connection.commit();
-    connection.release();
 
     return res.status(200).json({
       message: "Offer deleted successfully"
@@ -5347,11 +5288,10 @@ export const initOperatingHoursTable = async () => {
         VALUES (?, FALSE, '09:00:00', '22:00:00')
       `, [day]);
     }
-
-    connection.release();
     console.log('✅ Operating hours table initialized');
   } catch (error) {
     console.error('Error initializing operating hours table:', error);
+  }finally {
     if (connection) connection.release();
   }
 };
@@ -5383,15 +5323,15 @@ export const getOperatingHours = async (req, res) => {
       is_closed: Boolean(h.is_closed)
     }));
 
-    connection.release();
     res.json({
       success: true,
       operatingHours: formattedHours
     });
   } catch (error) {
     console.error('Error fetching operating hours:', error);
-    if (connection) connection.release();
     res.status(500).json({ message: 'Server error' });
+  }finally {
+    if (connection) connection.release();
   }
 };
 
@@ -5424,7 +5364,6 @@ export const updateOperatingHours = async (req, res) => {
     }
 
     if (updates.length === 0) {
-      connection.release();
       return res.status(400).json({ message: 'No fields to update' });
     }
 
@@ -5437,15 +5376,15 @@ export const updateOperatingHours = async (req, res) => {
     // Check and update is_open status
     await checkAndUpdateIsOpen(connection);
 
-    connection.release();
     res.json({
       success: true,
       message: 'Operating hours updated successfully'
     });
   } catch (error) {
     console.error('Error updating operating hours:', error);
-    if (connection) connection.release();
     res.status(500).json({ message: 'Server error' });
+  }finally {
+    if (connection) connection.release();
   }
 };
 
@@ -5484,15 +5423,15 @@ export const bulkUpdateOperatingHours = async (req, res) => {
     // Check and update is_open status
     await checkAndUpdateIsOpen(connection);
 
-    connection.release();
     res.json({
       success: true,
       message: 'All operating hours updated successfully'
     });
   } catch (error) {
     console.error('Error bulk updating operating hours:', error);
-    if (connection) connection.release();
     res.status(500).json({ message: 'Server error' });
+  }finally {
+    if (connection) connection.release();
   }
 };
 
@@ -5500,33 +5439,25 @@ export const bulkUpdateOperatingHours = async (req, res) => {
 export const checkAndUpdateIsOpen = async (existingConnection = null) => {
   let connection = existingConnection;
   let shouldRelease = false;
-
   try {
     if (!connection) {
       connection = await pool.getConnection();
       shouldRelease = true;
     }
-
     const serverTime = new Date();
     const moroccoTimeStr = serverTime.toLocaleString("en-US", {timeZone: "Africa/Casablanca"});
     const moroccoTime = new Date(moroccoTimeStr);
     
     const currentDay = moroccoTime.getDay();
     const yesterday = (currentDay + 6) % 7;
-
-    // Fetch both today and yesterday to check for overnight shifts
     const [rows] = await connection.execute(`
       SELECT day_of_week, is_closed, open_time, close_time
       FROM restaurant_operating_hours
       WHERE day_of_week IN (?, ?)
     `, [currentDay, yesterday]);
-
     const todayHours = rows.find(r => r.day_of_week === currentDay);
     const yesterdayHours = rows.find(r => r.day_of_week === yesterday);
-
     let shouldBeOpen = false;
-
-    // Helper to convert DB time string to a Date object on a specific reference day
     const getShiftDate = (refDate, timeStr, dayOffset = 0) => {
       const d = new Date(refDate);
       d.setDate(d.getDate() + dayOffset);
@@ -5534,25 +5465,17 @@ export const checkAndUpdateIsOpen = async (existingConnection = null) => {
       d.setHours(parseInt(h), parseInt(m), parseInt(s || 0), 0);
       return d;
     };
-
-    // 1. Check Today's Schedule
     if (todayHours && !todayHours.is_closed) {
       const openToday = getShiftDate(moroccoTime, todayHours.open_time);
       let closeToday = getShiftDate(moroccoTime, todayHours.close_time);
-      
       if (closeToday <= openToday) closeToday.setDate(closeToday.getDate() + 1);
-      
       if (moroccoTime >= openToday && moroccoTime < closeToday) {
         shouldBeOpen = true;
       }
     }
-
-    // 2. Check Yesterday's Schedule (if it crossed midnight)
     if (!shouldBeOpen && yesterdayHours && !yesterdayHours.is_closed) {
       const openYesterday = getShiftDate(moroccoTime, yesterdayHours.open_time, -1);
       let closeYesterday = getShiftDate(moroccoTime, yesterdayHours.close_time, -1);
-      
-      // Only check if yesterday's shift actually crosses midnight
       if (closeYesterday <= openYesterday) {
         closeYesterday.setDate(closeYesterday.getDate() + 1);
         if (moroccoTime >= openYesterday && moroccoTime < closeYesterday) {
@@ -5560,18 +5483,16 @@ export const checkAndUpdateIsOpen = async (existingConnection = null) => {
         }
       }
     }
-
     await connection.execute(
       `UPDATE restaurant_settings SET is_open = ? WHERE id = (SELECT id FROM (SELECT id FROM restaurant_settings LIMIT 1) as t)`,
       [shouldBeOpen ? 1 : 0]
     );
-
-    if (shouldRelease) connection.release();
     return shouldBeOpen;
   } catch (error) {
     console.error('Error checking/updating is_open:', error);
-    if (shouldRelease && connection) connection.release();
     return null;
+  } finally {
+    if (shouldRelease && connection) connection.release(); // ← only releases if WE created it
   }
 };
 
@@ -5654,7 +5575,6 @@ export const getOpenStatus = async (req, res) => {
         }
     }
 
-    connection.release();
     res.json({
       success: true,
       is_open: isOpen,
@@ -5670,8 +5590,9 @@ export const getOpenStatus = async (req, res) => {
     });
   } catch (error) {
     console.error('Error getting open status:', error);
-    if (connection) connection.release();
     res.status(500).json({ message: 'Server error' });
+  }finally {
+    if (connection) connection.release();
   }
 };
 
@@ -5688,7 +5609,6 @@ export const toggleRestaurantOpen = async (req, res) => {
       [is_open ? 1 : 0]
     );
 
-    connection.release();
     res.json({
       success: true,
       message: `Restaurant is now ${is_open ? 'OPEN' : 'CLOSED'}`,
@@ -5696,7 +5616,8 @@ export const toggleRestaurantOpen = async (req, res) => {
     });
   } catch (error) {
     console.error('Error toggling restaurant open status:', error);
-    if (connection) connection.release();
     res.status(500).json({ message: 'Server error' });
+  }finally {
+    if (connection) connection.release();
   }
 };

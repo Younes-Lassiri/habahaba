@@ -1,26 +1,28 @@
 // @ts-ignore
+import { useAuth } from "@/contexts/AuthContext";
+import { registerForPushNotificationsAsync } from "@/utils/notifications";
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter } from "expo-router";
-import { useState, useEffect } from "react";
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import axios from "axios";
 import * as Haptics from 'expo-haptics';
+import { Image } from "expo-image";
+import { useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
   Platform,
+  SafeAreaView,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  KeyboardAvoidingView,
-  SafeAreaView,
-  StatusBar,
-  Modal,
 } from "react-native";
-import { Ionicons } from '@expo/vector-icons';
-import { Image } from "expo-image";
-import axios from "axios";
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import SignupHeader from '../assets/images/playStoreLogo.png';
 
@@ -100,6 +102,7 @@ const Field = ({
 const SignupScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { login } = useAuth();
   const [firstName, setFirstName]   = useState("");
   const [lastName, setLastName]     = useState("");
   const [email, setEmail]           = useState("");
@@ -224,7 +227,12 @@ const SignupScreen: React.FC = () => {
 
       await AsyncStorage.setItem("token", data.token);
       await AsyncStorage.setItem("client", JSON.stringify(data.client));
+      await login();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const clientId = data.client.id || data.client._id;
+      if (clientId) await registerForPushNotificationsAsync("client", clientId);
+      else console.error('No client ID found!');
       router.replace("/(tabs)");
 
     } catch (error) {

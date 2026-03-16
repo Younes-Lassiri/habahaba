@@ -6,6 +6,7 @@ import axios from 'axios';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
+import * as Location from 'expo-location'; // ← ADDED
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -34,6 +35,7 @@ import Colors from '@/constants/Colors';
 import { useRestaurantStatus } from '@/contexts/RestaurantStatusContext';
 import { useScrollPosition } from '@/contexts/ScrollPositionContext';
 import { useWebSocketNotifications } from '@/hooks/useWebSocketNotifications';
+import { useAuth } from '@/contexts/AuthContext'; // ← ADDED
 
 // Components
 import { LiveActivityBar } from '@/app/LiveActivityBar';
@@ -44,6 +46,9 @@ import ProductGrid from '@/components/ProductGrid';
 import { RestaurantClosedBanner } from '@/components/RestaurantClosedBanner';
 
 const { width } = Dimensions.get('window');
+
+// Google Maps API Key
+const GOOGLE_API_KEY = 'AIzaSyBjLiW7lO3mxLmDCWo3vM00fwFLnA6t6pQ'; // ← ADDED
 
 // Translation helper
 const t = (lang: 'english' | 'arabic' | 'french', key: {
@@ -115,6 +120,7 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
   const { isOpen: restaurantIsOpen, refreshStatus: refreshRestaurantStatus } = useRestaurantStatus();
   const { unreadCount } = useWebSocketNotifications();
   const { saveScrollPosition, getScrollPosition } = useScrollPosition();
+  const { isAuthenticated } = useAuth(); // ← ADDED
 
   const {
     categories,
@@ -151,6 +157,9 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
   const [language, setLanguage] = useState<'english' | 'arabic' | 'french'>(userLanguage);
   const [loadingLang, setLoadingLang] = useState(true);
   const isRTL = language === 'arabic';
+
+  // ── ADDED: ref to prevent running auto-location more than once per session ──
+  const hasAutoLocatedRef = useRef(false);
 
   // Load language from storage when screen focuses
   useFocusEffect(
@@ -541,6 +550,163 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
     borderTopRightRadius: 0,
     paddingTop: Platform.OS === 'android' ? insets.top : 0,
   }), [insets.top]);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ADDED: Auto-collect location after login if client has no address
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Reverse-geocodes coordinates using Google Maps API.
+   * Returns the formatted address string or empty string on failure.
+   */
+  const reverseGeocodeWithGoogle = useCallback(
+    async (latitude: number, longitude: number): Promise<string> => {
+      try {
+        const response = await axios.get(
+          `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_API_KEY}&language=fr`
+        );
+        if (response.data.results && response.data.results.length > 0) {
+          return response.data.results[0].formatted_address as string;
+        }
+        return '';
+      } catch (error) {
+        console.error('❌ Auto-location Google Geocoding error:', error);
+        return '';
+      }
+    },
+    []
+  );
+
+  /**
+   * Saves the resolved address + coordinates to the backend and AsyncStorage.
+   */
+  const saveAutoLocationToBackend = useCallback(
+    async (address: string, latitude: number, longitude: number) => {
+      try {
+        const token = await AsyncStorage.getItem('token');
+        if (!token) return;
+
+        const formData = new FormData();
+        formData.append('adresses', address);
+        formData.append('lat', latitude.toString());
+        formData.append('lon', longitude.toString());
+
+        const response = await fetch(
+          'https://haba-haba-api.ubua.cloud/api/auth/update-profile',
+          {
+            method: 'PUT',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'multipart/form-data',
+            },
+            body: formData,
+          }
+        );
+
+        const result = await response.json();
+
+        if (response.ok && result.client) {
+          await AsyncStorage.setItem('client', JSON.stringify(result.client));
+          setUserAddress(result.client.adresses || address);
+          console.log('✅ Auto-location saved to backend:', address);
+        } else {
+          // Backend failed — update storage locally so UI still reflects the address
+          const storedClientRaw = await AsyncStorage.getItem('client');
+          if (storedClientRaw) {
+            const storedClient = JSON.parse(storedClientRaw);
+            const updatedClient = { ...storedClient, adresses: address, lat: latitude, lon: longitude };
+            await AsyncStorage.setItem('client', JSON.stringify(updatedClient));
+            setUserAddress(address);
+          }
+          console.warn('⚠️ Auto-location backend update failed, saved locally only.');
+        }
+      } catch (error) {
+        console.error('❌ Auto-location saveToBackend error:', error);
+        // Still try to save locally
+        try {
+          const storedClientRaw = await AsyncStorage.getItem('client');
+          if (storedClientRaw) {
+            const storedClient = JSON.parse(storedClientRaw);
+            const updatedClient = { ...storedClient, adresses: address, lat: latitude, lon: longitude };
+            await AsyncStorage.setItem('client', JSON.stringify(updatedClient));
+            setUserAddress(address);
+          }
+        } catch (_) {
+          // silently ignore nested error
+        }
+      }
+    },
+    []
+  );
+
+  /**
+   * Main auto-location entry point.
+   * Runs silently — only executes when:
+   *   1. User is authenticated
+   *   2. Client stored in AsyncStorage has an empty / missing `adresses` field
+   *   3. Has not already run during this app session
+   */
+  const autoCollectLocation = useCallback(async () => {
+    if (hasAutoLocatedRef.current) return;
+
+    try {
+      const storedClientRaw = await AsyncStorage.getItem('client');
+      if (!storedClientRaw) return;
+
+      const storedClient = JSON.parse(storedClientRaw);
+      const existingAddress: string = storedClient.adresses || '';
+
+      if (existingAddress.trim().length > 0) {
+        console.log('📍 Auto-location skipped: client already has address.');
+        hasAutoLocatedRef.current = true;
+        return;
+      }
+
+      hasAutoLocatedRef.current = true;
+
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('📍 Auto-location skipped: location permission denied.');
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const { latitude, longitude } = location.coords;
+
+      console.log('📍 Auto-location coordinates:', { latitude, longitude });
+
+      let resolvedAddress = await reverseGeocodeWithGoogle(latitude, longitude);
+
+      if (!resolvedAddress) {
+        resolvedAddress = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+      }
+
+      await saveAutoLocationToBackend(resolvedAddress, latitude, longitude);
+    } catch (error) {
+      console.error('❌ autoCollectLocation error:', error);
+    }
+  }, [reverseGeocodeWithGoogle, saveAutoLocationToBackend]);
+
+  /**
+   * Watch `isAuthenticated` — whenever the user logs in, kick off the silent auto-location flow.
+   * Reset the session guard on logout so next login can run it again.
+   */
+  useEffect(() => {
+    if (isAuthenticated) {
+      const timer = setTimeout(() => {
+        autoCollectLocation();
+      }, 1500);
+      return () => clearTimeout(timer);
+    } else {
+      hasAutoLocatedRef.current = false;
+    }
+  }, [isAuthenticated, autoCollectLocation]);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // END auto-location block
+  // ═══════════════════════════════════════════════════════════════════
 
   // JSX
   return (

@@ -5,9 +5,9 @@
       "backgroundColor": "#ffffff",
       "resizeMode": "contain"
     },
-    "name": "Hbba Habba fodd delivery ",
+    "name": "Haba Haba Food Delivery ",
     "slug": "habba-habba-food-delivery-app",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/playStoreLogo.png",
     "scheme": "restaurantapp",
@@ -25,7 +25,7 @@
           "ios": {
             "newArchEnabled": true,
             "useFrameworks": "static",
-            "buildReactNativeFromSource": true, 
+            "buildReactNativeFromSource": true,
             "shouldAddAutomaticallyToTarget": true
           }
         }
@@ -122,9 +122,9 @@
           "apiKey": "AIzaSyCx4qoEgZzG3A7VW9_gxpEWAqMSeNs_DfY"
         }
       },
-      "versionCode": 2
+      "versionCode": 4
     },
-    "owner": "habahaba",
+    "owner": "habahabaios",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -135,7 +135,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "176fa377-99f6-4c10-9d5a-b272b38f696b"
+        "projectId": "4e516272-4533-4047-a882-0f39a1a0a654"
       },
       "router": {}
     }

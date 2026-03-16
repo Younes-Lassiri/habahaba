@@ -13,6 +13,19 @@ import adminNotificationRoutes from './routes/adminNotificationRoutes.js';
 import { checkAndUpdateIsOpen, initOperatingHoursTable } from './controllers/adminController.js';
 dotenv.config();
 
+// ============ BULLETPROOF CRASH HANDLERS ============
+process.on('uncaughtException', (err) => {
+  console.error('💥 UNCAUGHT EXCEPTION:', new Date().toISOString());
+  console.error('Message:', err.message);
+  console.error('Stack:', err.stack);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('💥 UNHANDLED REJECTION:', new Date().toISOString());
+  console.error('Reason:', reason);
+});
+// ====================================================
+
 const app = express();
 
 // Configure CORS with explicit options
@@ -355,31 +368,23 @@ const queueInterval = setInterval(processNotificationQueue, 30000); // CHANGED: 
 
 // Function to log database notification status
 const logNotificationStatus = async () => {
+  let connection;
   try {
-    const connection = await pool.getConnection();
-
-    // Count admin notifications
+    connection = await pool.getConnection();
     const [adminNotifications] = await connection.query(
       "SELECT COUNT(*) as total, SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread FROM notifications WHERE user_type = 'admin'"
     );
-
-    // Count admin notification queue
     const [adminQueue] = await connection.query(
       "SELECT COUNT(*) as total FROM notification_queue WHERE user_type = 'admin' AND processed = FALSE"
     );
-
-    // Count active admins
     const [activeAdmins] = await connection.query(
       "SELECT COUNT(*) as total FROM admins WHERE is_active = 1"
     );
-
     console.log('📊 NOTIFICATION STATUS:');
     console.log(`   👑 Active Admins: ${activeAdmins[0]?.total || 0}`);
     console.log(`   📨 Admin Notifications: ${adminNotifications[0]?.total || 0} total, ${adminNotifications[0]?.unread || 0} unread`);
     console.log(`   ⏳ Admin Queue Pending: ${adminQueue[0]?.total || 0}`);
     console.log(`   🔗 Connected Clients: ${connectedClients.size}`);
-
-    // List connected admins
     let adminConnections = 0;
     connectedClients.forEach((ws, key) => {
       if (key.includes('_admin')) {
@@ -387,10 +392,10 @@ const logNotificationStatus = async () => {
       }
     });
     console.log(`   📱 Connected Admin Clients: ${adminConnections}`);
-
-    connection.release();
   } catch (error) {
     console.error('Error logging notification status:', error);
+  } finally {
+    if (connection) connection.release();
   }
 };
 
