@@ -15,6 +15,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Colors from "@/constants/Colors";
 
 const COLORS = {
   background: "#F9F6EF",
@@ -312,6 +313,20 @@ const TermsOfService: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      {/* ✅ This fills the status bar area on iOS with your primary color */}
+              {Platform.OS === 'ios' && (
+                <View
+                  style={{
+                    height: insets.top,
+                    backgroundColor: Colors.primary,
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    zIndex: 999,
+                  }}
+                />
+              )}
       {/* Top right language icon */}
       <View style={[styles.topRightButtons, { top: Platform.OS === 'ios' ? 54 : 50 }]}>
         <TouchableOpacity
@@ -481,7 +496,7 @@ const TermsOfService: React.FC = () => {
         onRequestClose={() => setShowLanguageModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: insets.bottom + 20 }]}>
             <View style={[styles.modalHeader, isRTL && styles.modalHeaderRTL]}>
               {isRTL ? (
                 <>

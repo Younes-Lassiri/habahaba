@@ -7,15 +7,15 @@ import { sendNotification } from "../utils/notificationService.js";
 
 // Get delivery man profile
 export const getDeliveryManProfile = async (req, res) => {
+  let connection;
   try {
-    const connection = await pool.getConnection();
+    connection = await pool.getConnection();
     const [rows] = await connection.execute(
       `SELECT id, name, email, phone, vehicle_type, license_number, image,
        is_active, current_latitude, current_longitude, last_location_update, created_at
        FROM delivery_men WHERE id = ?`,
       [req.deliveryManId]
     );
-    connection.release();
 
     if (rows.length === 0) {
       return res.status(404).json({ message: "Delivery man not found" });
@@ -25,6 +25,8 @@ export const getDeliveryManProfile = async (req, res) => {
   } catch (error) {
     console.error("Error fetching profile:", error);
     res.status(500).json({ message: "Server error" });
+  }finally{
+    if (connection) connection.release();
   }
 };
 
@@ -94,7 +96,6 @@ export const updateDeliveryManProfile = async (req, res) => {
     }
 
     if (updates.length === 0) {
-      connection.release();
       return res.status(400).json({ message: "No fields to update" });
     }
 
@@ -112,42 +113,45 @@ export const updateDeliveryManProfile = async (req, res) => {
       [req.deliveryManId]
     );
 
-    connection.release();
 
     res.json({
       message: "Profile updated successfully",
       deliveryMan: updatedRows[0],
     });
   } catch (error) {
-    if (connection) connection.release();
     console.error("Error updating profile:", error);
     res.status(500).json({ message: "Server error" });
+  }finally{
+    if (connection) connection.release();
   }
 };
 
 // Update delivery man location
 export const updateDeliveryManLocation = async (req, res) => {
+  let connection;
   try {
     const { latitude, longitude } = req.body;
-    const connection = await pool.getConnection();
+    connection = await pool.getConnection();
 
     await connection.execute(
       "UPDATE delivery_men SET current_latitude = ?, current_longitude = ?, last_location_update = NOW() WHERE id = ?",
       [latitude, longitude, req.deliveryManId]
     );
-    connection.release();
 
     res.json({ message: "Location updated successfully" });
   } catch (error) {
     console.error("Error updating location:", error);
     res.status(500).json({ message: "Server error" });
+  }finally{
+    if (connection) connection.release();
   }
 };
 
 // Get dashboard metrics
 export const getDashboardMetrics = async (req, res) => {
+  let connection;
   try {
-    const connection = await pool.getConnection();
+    connection = await pool.getConnection();
 
     // Get deliveryManId from JWT token (should be set by your auth middleware)
     const deliveryManId = req.deliveryManId || req.user?.id;
@@ -165,7 +169,6 @@ export const getDashboardMetrics = async (req, res) => {
     );
 
     if (deliveryMan.length === 0) {
-      connection.release();
       return res.status(404).json({ message: "Delivery man not found" });
     }
 
@@ -274,7 +277,6 @@ export const getDashboardMetrics = async (req, res) => {
         AND DATE(created_at) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)`,
       [deliveryManId]
     );
-    connection.release();
 
     const stats = orderStats[0];
     const earnings = earningsAnalysis[0];
@@ -356,13 +358,16 @@ export const getDashboardMetrics = async (req, res) => {
       message: "Server error",
       error: error.message
     });
+  }finally{
+    if (connection) connection.release();
   }
 };
 
 // Get my assigned orders
 export const getMyOrders = async (req, res) => {
+  let connection;
   try {
-    const connection = await pool.getConnection();
+    connection = await pool.getConnection();
 
     const [orders] = await connection.execute(
       `SELECT 
@@ -404,18 +409,20 @@ export const getMyOrders = async (req, res) => {
       })
     );
 
-    connection.release();
     res.json({ orders: ordersWithItems });
   } catch (error) {
     console.error("Error fetching my orders:", error);
     res.status(500).json({ message: "Server error" });
+  }finally{
+    if (connection) connection.release();
   }
 };
 
 // Get pending orders (for Active Orders tab) - only unassigned orders
 export const getPendingOrders = async (req, res) => {
+  let connection;
   try {
-    const connection = await pool.getConnection();
+    connection = await pool.getConnection();
 
     const [orders] = await connection.execute(
       `SELECT 
@@ -456,12 +463,12 @@ export const getPendingOrders = async (req, res) => {
         };
       })
     );
-
-    connection.release();
     res.json({ orders: ordersWithItems });
   } catch (error) {
     console.error("Error fetching pending orders:", error);
     res.status(500).json({ message: "Server error" });
+  }finally{
+    if (connection) connection.release();
   }
 };
 
@@ -484,7 +491,6 @@ export const acceptOrder = async (req, res) => {
     );
 
     if (orders.length === 0) {
-      connection.release();
       return res.status(404).json({ message: "Order not found or unavailable" });
     }
 
@@ -497,7 +503,6 @@ export const acceptOrder = async (req, res) => {
     );
 
     if (updateResult.affectedRows === 0) {
-      connection.release();
       return res.status(409).json({ message: "Order already taken" });
     }
 
@@ -539,20 +544,13 @@ export const acceptOrder = async (req, res) => {
 
     // ------------------------------------------------------
 
-    connection.release();
     return res.status(200).json({ message: "Order accepted successfully" });
 
   } catch (error) {
     console.error("❌ Error accepting order:", error.message);
     return res.status(500).json({ message: "Server error" });
-  } finally {
-    if (connection) {
-      try {
-        connection.release();
-      } catch (err) {
-        console.error("Error releasing connection:", err.message);
-      }
-    }
+  }finally{
+    if (connection) connection.release();
   }
 };
 
@@ -572,7 +570,6 @@ export const updateOrderStatus = async (req, res) => {
     );
 
     if (orderRows.length === 0) {
-      connection.release();
       return res.status(404).json({ message: "Order not found" });
     }
 
@@ -580,7 +577,6 @@ export const updateOrderStatus = async (req, res) => {
 
     // Only allow "Delivered" status if current status is "OutForDelivery"
     if (status === 'Delivered' && currentOrder.status !== 'OutForDelivery') {
-      connection.release();
       return res.status(400).json({
         message: "Order must be 'OutForDelivery' before it can be marked as 'Delivered'"
       });
@@ -702,8 +698,6 @@ export const updateOrderStatus = async (req, res) => {
       }
     }
 
-    connection.release();
-
     res.json({
       message: "Order status updated successfully",
       notification_sent: true
@@ -718,8 +712,9 @@ export const updateOrderStatus = async (req, res) => {
 
 // Get delivered orders with ratings
 export const getDeliveredOrders = async (req, res) => {
+  let connection;
   try {
-    const connection = await pool.getConnection();
+    connection = await pool.getConnection();
 
     const [orders] = await connection.execute(
       `SELECT 
@@ -772,22 +767,24 @@ export const getDeliveredOrders = async (req, res) => {
       })
     );
 
-    connection.release();
     res.json({ orders: ordersWithDetails });
   } catch (error) {
     console.error("Error fetching delivered orders:", error);
     res.status(500).json({ message: "Server error" });
+  }finally{
+    if (connection) connection.release();
   }
 };
 
 // Get delivery man statistics
 export const getDeliveryStats = async (req, res) => {
+  let connection;
   try {
     console.log('=== GET DELIVERY STATS CALLED ===');
     console.log('Delivery Man ID from token:', req.deliveryManId);
     console.log('Request headers:', req.headers);
 
-    const connection = await pool.getConnection();
+    connection = await pool.getConnection();
 
     // Debug: First check if we have any delivered orders for this delivery man
     const [debugResult] = await connection.execute(
@@ -847,7 +844,6 @@ export const getDeliveryStats = async (req, res) => {
     console.log('Count query result:', countResult);
     console.log('total_deliveries value:', countResult[0].total_deliveries);
 
-    connection.release();
 
     const totalDeliveryFees = parseFloat(feesResult[0].total_delivery_fees || 0);
     const avgRating = parseFloat(ratingResult[0].avg_rating || 0);
@@ -873,6 +869,8 @@ export const getDeliveryStats = async (req, res) => {
       error: error.message,
       sql: error.sql
     });
+  }finally{
+    if (connection) connection.release();
   }
 };
 

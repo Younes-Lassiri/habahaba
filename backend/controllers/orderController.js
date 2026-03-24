@@ -696,7 +696,9 @@ Please log in to your admin panel to process this order.
     error_code: "SERVER_ERROR", 
     message: "Failed to create order" 
   });
-}
+} finally {
+    if (connection) connection.release(); // ← only here ✅
+  }
 };
 
 // 🔔 Function to notify all delivery men
@@ -802,6 +804,7 @@ export async function notifyAllDeliveryMen(orderId, orderNumber, finalPrice, add
 
 // Get delivery man location for an order
 export const getDeliveryManLocation = async (req, res) => {
+  let connection;
   try {
     const { order_id } = req.query;
 
@@ -809,7 +812,7 @@ export const getDeliveryManLocation = async (req, res) => {
       return res.status(400).json({ message: "Order ID is required" });
     }
 
-    const connection = await pool.getConnection();
+    connection = await pool.getConnection();
 
     // Get order with delivery man location
     const [orders] = await connection.execute(
@@ -820,8 +823,6 @@ export const getDeliveryManLocation = async (req, res) => {
        WHERE o.id = ?`,
       [order_id]
     );
-
-    connection.release();
 
     if (orders.length === 0) {
       return res.status(404).json({ message: "Order not found" });
@@ -854,6 +855,8 @@ export const getDeliveryManLocation = async (req, res) => {
   } catch (error) {
     console.error("Error fetching delivery man location:", error);
     res.status(500).json({ message: "Server error" });
+  }finally{
+    if (connection) connection.release();
   }
 };
 

@@ -235,8 +235,9 @@ export const getAllOffers = async (req, res) => {
 
 // offers
 export const applyOfferToAllProducts = async (req, res) => {
-  const connection = await pool.getConnection();
+  let connection; // ← let outside
   try {
+    connection = await pool.getConnection();
     await connection.beginTransaction();
 
     const { offerId, userId } = req.body;
@@ -364,9 +365,9 @@ export const applyOfferToAllProducts = async (req, res) => {
       success: false,
       message: 'Failed to apply offer. Please try again.'
     });
-  } finally {
-    connection.release();
-  }
+  }finally {
+    if (connection) connection.release(); // ← safe guard ✅
+}
 };
 
 // Helper function to calculate discounted price

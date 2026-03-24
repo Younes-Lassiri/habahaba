@@ -5,8 +5,8 @@ import Slider from '@react-native-community/slider';
 import axios from 'axios';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect, useRouter } from 'expo-router';
 import * as Location from 'expo-location'; // ← ADDED
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -32,10 +32,10 @@ import { fetchHomePageData } from '@/app/redux/slices/homeSlice';
 import { addItem, removeItem, updateItemQuantity } from '@/app/redux/slices/orderSlice';
 import type { AppDispatch, RootState } from '@/app/redux/store';
 import Colors from '@/constants/Colors';
+import { useAuth } from '@/contexts/AuthContext'; // ← ADDED
 import { useRestaurantStatus } from '@/contexts/RestaurantStatusContext';
 import { useScrollPosition } from '@/contexts/ScrollPositionContext';
 import { useWebSocketNotifications } from '@/hooks/useWebSocketNotifications';
-import { useAuth } from '@/contexts/AuthContext'; // ← ADDED
 
 // Components
 import { LiveActivityBar } from '@/app/LiveActivityBar';
@@ -712,6 +712,20 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === 'ios' ? insets.top : undefined }]}>      {/* Status Bar */}
       <StatusBar backgroundColor={Colors.primary} barStyle="light-content" />
+       {/* ✅ This fills the status bar area on iOS with your primary color */}
+        {Platform.OS === 'ios' && (
+          <View
+            style={{
+              height: insets.top,
+              backgroundColor: Colors.primary,
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              zIndex: 999,
+            }}
+          />
+        )}
 
       {/* Filter Modal - Redesigned */}
       <Modal
@@ -816,8 +830,7 @@ export default function HomeScreenContent({ userLanguage = 'english' }: HomeScre
             </ScrollView>
 
             {/* Footer */}
-            <View style={[filterModalStyles.modalFooter, isRTL && filterModalStyles.modalFooterAr]}>
-              <TouchableOpacity
+              <View style={[filterModalStyles.modalFooter, isRTL && filterModalStyles.modalFooterAr, { paddingBottom: insets.bottom + 16 }]}>              <TouchableOpacity
                 style={[filterModalStyles.actionButton, filterModalStyles.resetButton]}
                 onPress={() => {
                   setBestForValue('');

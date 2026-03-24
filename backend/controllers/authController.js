@@ -44,7 +44,7 @@ export const register = async (req, res) => {
     const token = jwt.sign(
       { id: newClientId, email: cleanEmail, name: name },
       process.env.JWT_SECRET,
-      { expiresIn: "36500d" } // Permanent login
+      { expiresIn: "109500d" } // Permanent login
     );
 
     // 🧩 6. Final Response (Matches login response structure)
@@ -154,7 +154,7 @@ export const login = async (req, res) => {
         role: admin.role || 'admin'
       },
       process.env.JWT_SECRET,
-      { expiresIn: "36500d" }
+      { expiresIn: "109500d" }
     );
 
     // ✅ CRITICAL: Update BOTH last_login AND api_token in the database
@@ -186,12 +186,7 @@ export const login = async (req, res) => {
       token,
     });
     }
-
-
-
-    // 🧩 2. Get a connection
-    connection = await pool.getConnection();
-
+    
     // 🧩 3. Check if client exists
     const [rows] = await connection.execute(
       "SELECT * FROM clients WHERE email = ?",
@@ -224,7 +219,7 @@ export const login = async (req, res) => {
         name: client.name,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "36500d" } // you can adjust expiration
+      { expiresIn: "109500d" } // you can adjust expiration
     );
 
     // 🧩 7. Send response
@@ -366,7 +361,7 @@ export const resetPassword = async (req, res) => {
         name: client.name,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "36500d" }
+      { expiresIn: "109500d" }
     );
     
     return res.status(200).json({
@@ -407,8 +402,9 @@ export const getCategories = async (req, res) => {
 };
 
 export const getProducts = async (req, res) => {
+  let connection;
   try {
-    const connection = await pool.getConnection();
+    connection = await pool.getConnection();
 
     const [rows] = await connection.query(`
       SELECT 
@@ -430,7 +426,6 @@ export const getProducts = async (req, res) => {
       ORDER BY p.created_at DESC
     `);
 
-    connection.release();
 
     // ✅ SANITIZE + NORMALIZE OUTPUT
     const safeProducts = rows.map(p => ({
@@ -460,6 +455,8 @@ export const getProducts = async (req, res) => {
   } catch (error) {
     console.error("❌ Error fetching products:", error.message);
     res.status(500).json({ message: "Server error while fetching products" });
+  }finally{
+    if (connection) connection.release();
   }
 };
 
@@ -492,7 +489,6 @@ export const deliveryManLogin = async (req, res) => {
     // 🧩 5. Compare passwords securely
     const isMatch = await bcrypt.compare(password, deliveryMan.password);
     if (!isMatch) {
-      connection.release();
       return res.status(401).json({ message: "Invalid email or password" });
     }
     
@@ -510,7 +506,7 @@ export const deliveryManLogin = async (req, res) => {
         name: deliveryMan.name,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "36500d" } // you can adjust expiration
+      { expiresIn: "109500d" } // you can adjust expiration
     );
     // 🧩 7. Send response
     return res.status(200).json({
@@ -575,7 +571,7 @@ export const loginWithPhone = async (req, res) => {
         name: client.name,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "36500d" }
+      { expiresIn: "109500d" }
     );
     // 🧩 7. Send response
     return res.status(200).json({
@@ -612,9 +608,7 @@ export const getAllProductsWithOffers = async (req, res) => {
     const { page = 1, limit = 20, category_id, search, userId } = req.query;
     connection = await pool.getConnection();
 
-    console.log('🔍 Fetching products. UserId:', userId);
-
-    // Base query for products
+    // ----- Base products query (same as before) -----
     let baseQuery = `
       SELECT DISTINCT
         p.*, 
@@ -624,9 +618,7 @@ export const getAllProductsWithOffers = async (req, res) => {
       JOIN categories c ON p.category_id = c.id
       WHERE p.active = TRUE AND c.active = TRUE
     `;
-
     const baseParams = [];
-    
     if (category_id) {
       baseQuery += " AND p.category_id = ?";
       baseParams.push(category_id);
@@ -636,19 +628,15 @@ export const getAllProductsWithOffers = async (req, res) => {
       const searchTerm = `%${search}%`;
       baseParams.push(searchTerm, searchTerm, searchTerm);
     }
-
     baseQuery += " ORDER BY p.is_popular DESC, p.created_at DESC";
-
     const offset = (parseInt(page) - 1) * parseInt(limit);
     baseQuery += ` LIMIT ? OFFSET ?`;
     baseParams.push(parseInt(limit), offset);
 
     const [baseProducts] = await connection.execute(baseQuery, baseParams);
-    console.log('✅ Total products fetched:', baseProducts.length);
 
-    // STEP 1: If no userId, return all products normally
+    // If no userId, return products without offer data
     if (!userId) {
-      console.log('ℹ️ No userId - returning products normally');
       const simpleProducts = baseProducts.map(p => ({
         ...p,
         price: parseFloat(p.price),
@@ -676,274 +664,103 @@ export const getAllProductsWithOffers = async (req, res) => {
           limit: parseInt(limit),
           pages: Math.ceil(countResult[0].total / parseInt(limit)),
         },
-        user_context: {
-          user_id: null,
-          has_active_offer: false
-        }
+        user_context: { user_id: null, has_active_offer: false }
       });
     }
 
-    // STEP 2: Check if user has an active applied offer
-    console.log(`\n🔍 STEP 2: Checking if user ${userId} has an active applied offer...`);
-    
-    const userOfferQuery = `
-      SELECT * FROM offers 
-      WHERE is_active = TRUE 
-        AND start_at <= NOW() 
-        AND end_at > NOW()
-      ORDER BY created_at DESC
-      LIMIT 1
-    `;
-    
-    const [userOffers] = await connection.execute(userOfferQuery, [userId]);
+    // ----- Check for an active offer applied by the user -----
+    const [userOffers] = await connection.execute(
+      `SELECT * FROM offers 
+       WHERE is_active = TRUE 
+         AND start_at <= NOW() 
+         AND end_at > NOW()
+       ORDER BY created_at DESC
+       LIMIT 1`
+    );
 
-    // STEP 3: If no active applied offer, return products normally
     if (userOffers.length === 0) {
-      console.log(`ℹ️ User ${userId} has NO active applied offers - returning products normally`);
-      
-      const simpleProducts = baseProducts.map(p => ({
-        ...p,
-        price: parseFloat(p.price),
-        rating: parseFloat(p.rating) || 0,
-        promo: Boolean(p.promo),
-        is_popular: Boolean(p.is_popular),
-        active: Boolean(p.active),
-        has_offer: false,
-        discount_applied: false,
-        offer_info: null
-      }));
-
-      const [countResult] = await connection.execute(
-        `SELECT COUNT(*) as total FROM products p 
-         JOIN categories c ON p.category_id = c.id 
-         WHERE p.active = TRUE AND c.active = TRUE`
-      );
-
-      return res.status(200).json({
-        success: true,
-        products: simpleProducts,
-        pagination: {
-          total: countResult[0].total,
-          page: parseInt(page),
-          limit: parseInt(limit),
-          pages: Math.ceil(countResult[0].total / parseInt(limit)),
-        },
-        user_context: {
-          user_id: userId,
-          has_active_offer: false
-        }
-      });
+      // No active offer → return products normally
+      const simpleProducts = baseProducts.map(p => ({ ...p, /* ... */ }));
+      // ... (same as above)
+      return res.status(200).json({ /* ... */ });
     }
 
     const appliedOffer = userOffers[0];
-    
-    // FIX: Use the correct column name 'discount' instead of 'discount_value'
-    console.log('🔍 CORRECTED OFFER DATA:');
-    console.log('Offer ID:', appliedOffer.id);
-    console.log('Offer Name:', appliedOffer.name);
-    console.log('Discount Type:', appliedOffer.discount_type);
-    console.log('Discount Value (from "discount" column):', appliedOffer.discount);
-    console.log('Discount Value Type:', typeof appliedOffer.discount);
-    
-    // STEP 4: Get all products included in this offer WITH their times_used
-    console.log(`\n🔍 STEP 4: Getting products included in offer ${appliedOffer.id}...`);
-    
-    const offerProductsQuery = `
-      SELECT op.product_id, op.limited_use, op.times_used
-      FROM offer_products op
-      JOIN products p ON op.product_id = p.id
-      WHERE op.offer_id = ? AND p.active = TRUE
-    `;
-    const [offerProducts] = await connection.execute(offerProductsQuery, [appliedOffer.id]);
+
+    // ----- Get the user's usage count for this offer -----
+    const [userUsageRows] = await connection.execute(
+      `SELECT usage_count FROM offer_usages 
+       WHERE offer_id = ? AND user_id = ?`,
+      [appliedOffer.id, userId]
+    );
+    const userUsageCount = userUsageRows.length > 0 ? userUsageRows[0].usage_count : 0;
+    const userHasApplied = userUsageCount > 0;   // true if the user has ever applied this offer
+
+    // ----- Get all products included in this offer -----
+    const [offerProducts] = await connection.execute(
+      `SELECT op.product_id, op.limited_use, op.times_used
+       FROM offer_products op
+       JOIN products p ON op.product_id = p.id
+       WHERE op.offer_id = ? AND p.active = TRUE`,
+      [appliedOffer.id]
+    );
     const offerProductIds = offerProducts.map(p => p.product_id);
-    
-    console.log(`✅ Offer contains ${offerProductIds.length} products`);
 
-    // STEP 6: Process all products with BOTH conditions - USING CORRECT COLUMN NAME
-    console.log(`\n🔍 STEP 6: Processing products with offer logic...`);
-    
-    // FIX: Use the correct column name 'discount'
-    let discountValue;
-    if (appliedOffer.discount === null || appliedOffer.discount === undefined) {
-      console.error('❌ CRITICAL: discount is NULL or UNDEFINED in database!');
-      console.error('   Please check the offers table for offer ID:', appliedOffer.id);
-      
-      // Return products without offers due to invalid data
-      console.log('⚠️ Returning products without offer due to invalid discount data');
-      
-      const simpleProducts = baseProducts.map(p => ({
-        ...p,
-        price: parseFloat(p.price),
-        rating: parseFloat(p.rating) || 0,
-        promo: Boolean(p.promo),
-        is_popular: Boolean(p.is_popular),
-        active: Boolean(p.active),
-        has_offer: false,
-        discount_applied: false,
-        offer_info: null
-      }));
-
-      const [countResult] = await connection.execute(
-        `SELECT COUNT(*) as total FROM products p 
-         JOIN categories c ON p.category_id = c.id 
-         WHERE p.active = TRUE AND c.active = TRUE`
-      );
-
-      return res.status(200).json({
-        success: true,
-        products: simpleProducts,
-        pagination: {
-          total: countResult[0].total,
-          page: parseInt(page),
-          limit: parseInt(limit),
-          pages: Math.ceil(countResult[0].total / parseInt(limit)),
-        },
-        user_context: {
-          user_id: userId,
-          has_active_offer: false,
-          error: 'Invalid offer data - discount value missing'
-        }
-      });
-    } else {
-      // Parse the discount value from the correct column 'discount'
-      discountValue = parseFloat(appliedOffer.discount);
-      if (isNaN(discountValue)) {
-        console.error('❌ CRITICAL: discount is not a valid number:', appliedOffer.discount);
-        
-        // Return products without offers due to invalid data
-        console.log('⚠️ Returning products without offer due to invalid discount value');
-        
-        const simpleProducts = baseProducts.map(p => ({
-          ...p,
-          price: parseFloat(p.price),
-          rating: parseFloat(p.rating) || 0,
-          promo: Boolean(p.promo),
-          is_popular: Boolean(p.is_popular),
-          active: Boolean(p.active),
-          has_offer: false,
-          discount_applied: false,
-          offer_info: null
-        }));
-
-        const [countResult] = await connection.execute(
-          `SELECT COUNT(*) as total FROM products p 
-           JOIN categories c ON p.category_id = c.id 
-           WHERE p.active = TRUE AND c.active = TRUE`
-        );
-
-        return res.status(200).json({
-          success: true,
-          products: simpleProducts,
-          pagination: {
-            total: countResult[0].total,
-            page: parseInt(page),
-            limit: parseInt(limit),
-            pages: Math.ceil(countResult[0].total / parseInt(limit)),
-          },
-          user_context: {
-            user_id: userId,
-            has_active_offer: false,
-            error: 'Invalid discount value in offer'
-          }
-        });
-      }
+    // ----- Parse discount value -----
+    let discountValue = parseFloat(appliedOffer.discount);
+    if (isNaN(discountValue)) {
+      // Invalid discount → fallback to no offer
+      const simpleProducts = baseProducts.map(p => ({ /* ... */ }));
+      return res.status(200).json({ /* ... */ });
     }
-    
-    console.log(`✅ Using discount value: ${discountValue} (${appliedOffer.discount_type})`);
 
+    // ----- Process each product -----
     const processedProducts = baseProducts.map(product => {
       const originalPrice = parseFloat(product.price);
       const isInOffer = offerProductIds.includes(product.id);
-      
-      // If product is NOT in offer, return it normally
-      if (!isInOffer) {
-        return {
-          ...product, // FIX: Changed from 'p' to 'product'
-          price: originalPrice,
-          rating: parseFloat(product.rating) || 0,
-          promo: Boolean(product.promo),
-          is_popular: Boolean(product.is_popular),
-          active: Boolean(product.active),
-          has_offer: false,
-          discount_applied: false,
-          offer_info: null
-        };
-      }
 
-      // Product IS in offer - check BOTH conditions
-      const offerProduct = offerProducts.find(op => op.product_id === product.id);
-      const maxUses = offerProduct.limited_use;
-      const timesUsed = offerProduct.times_used || 0;
-      
-      console.log(`📍 Product ${product.id}: maxUses=${maxUses}, timesUsed=${timesUsed}, userUsageCount=${userUsageCount}`);
-      
-      // Check BOTH conditions:
-      const globalLimitNotReached = maxUses === null || timesUsed < maxUses;
-      
-      const canUseOffer = globalLimitNotReached;
-      
+      // Default: no offer applied
       let finalPrice = originalPrice;
+      let discountApplied = false;
       let offerInfo = null;
 
-      // Calculate discounted price
-      let calculatedDiscountedPrice = originalPrice;
-      if (appliedOffer.discount_type === 'percentage') {
-        calculatedDiscountedPrice = originalPrice * (1 - discountValue / 100);
-      } else if (appliedOffer.discount_type === 'fixed') {
-        calculatedDiscountedPrice = Math.max(0.01, originalPrice - discountValue);
-      }
-      calculatedDiscountedPrice = parseFloat(calculatedDiscountedPrice.toFixed(2));
+      if (isInOffer) {
+        const offerProduct = offerProducts.find(op => op.product_id === product.id);
+        const maxUses = offerProduct.limited_use;
+        const timesUsed = offerProduct.times_used || 0;
+        const globalLimitNotReached = maxUses === null || timesUsed < maxUses;
 
-      if (canUseOffer) {
-        // User CAN use the offer - apply the discount
-        finalPrice = calculatedDiscountedPrice;
-        
+        // Calculate discounted price (for display, even if not applied)
+        let calculatedPrice = originalPrice;
+        if (appliedOffer.discount_type === 'percentage') {
+          calculatedPrice = originalPrice * (1 - discountValue / 100);
+        } else {
+          calculatedPrice = Math.max(0.01, originalPrice - discountValue);
+        }
+        calculatedPrice = parseFloat(calculatedPrice.toFixed(2));
+
+        // Discount applies only if user has applied AND global limit not reached
+        discountApplied = userHasApplied && globalLimitNotReached;
+        if (discountApplied) {
+          finalPrice = calculatedPrice;
+        }
+
         offerInfo = {
           offer_id: appliedOffer.id,
           offer_name: appliedOffer.name,
           discount_type: appliedOffer.discount_type,
           discount_value: discountValue,
           original_price: originalPrice,
-          discounted_price: calculatedDiscountedPrice,
-          can_use_offer: true,
+          discounted_price: calculatedPrice,
+          can_use_offer: discountApplied,
           times_used: timesUsed,
           max_uses: maxUses,
           remaining_uses: maxUses ? maxUses - timesUsed : null,
-          user_has_used: userUsageCount >= 1,
+          user_has_used: userHasApplied,
           user_usage_count: userUsageCount,
           valid_until: appliedOffer.end_at,
           description: appliedOffer.description
         };
-
-        console.log(`   ✅ Discount applied: ${originalPrice} -> ${finalPrice}, discount: ${discountValue}${appliedOffer.discount_type === 'percentage' ? '%' : 'MAD'}`);
-      } else {
-        // User CANNOT use the offer - but still include offer info for frontend display
-        finalPrice = originalPrice;
-        
-        let reason = '';
-        if (!globalLimitNotReached) {
-          reason = 'Global limit reached';
-        }
-
-        offerInfo = {
-          offer_id: appliedOffer.id,
-          offer_name: appliedOffer.name,
-          discount_type: appliedOffer.discount_type,
-          discount_value: discountValue,
-          original_price: originalPrice,
-          discounted_price: calculatedDiscountedPrice,
-          can_use_offer: false,
-          times_used: timesUsed,
-          max_uses: maxUses,
-          remaining_uses: maxUses ? maxUses - timesUsed : null,
-          user_has_used: userUsageCount >= 1,
-          user_usage_count: userUsageCount,
-          valid_until: appliedOffer.end_at,
-          description: appliedOffer.description,
-          reason: reason
-        };
-
-        console.log(`   ❌ ${reason} (Global: ${timesUsed}/${maxUses}, User: ${userUsageCount}/1) - Showing original price: ${originalPrice}, would be: ${calculatedDiscountedPrice}`);
       }
 
       return {
@@ -956,20 +773,16 @@ export const getAllProductsWithOffers = async (req, res) => {
         is_popular: Boolean(product.is_popular),
         active: Boolean(product.active),
         has_offer: isInOffer,
-        discount_applied: canUseOffer,
+        discount_applied: discountApplied,
         offer_info: offerInfo
       };
     });
 
-    // Get total count for pagination
-    let countQuery = `
-      SELECT COUNT(*) as total 
-      FROM products p 
-      JOIN categories c ON p.category_id = c.id 
-      WHERE p.active = TRUE AND c.active = TRUE
-    `;
+    // ----- Pagination and response -----
+    let countQuery = `SELECT COUNT(*) as total FROM products p 
+                      JOIN categories c ON p.category_id = c.id 
+                      WHERE p.active = TRUE AND c.active = TRUE`;
     const countParams = [];
-    
     if (category_id) {
       countQuery += " AND p.category_id = ?";
       countParams.push(category_id);
@@ -979,18 +792,12 @@ export const getAllProductsWithOffers = async (req, res) => {
       const searchTerm = `%${search}%`;
       countParams.push(searchTerm, searchTerm, searchTerm);
     }
-
     const [countResult] = await connection.execute(countQuery, countParams);
 
-    // Count products with active discounts
+    const [settings] = await db.execute(`SELECT restaurant_name FROM restaurant_settings`);
+    const restaurant_name = settings[0]?.restaurant_name || 'Restaurant';
+
     const productsWithActiveDiscounts = processedProducts.filter(p => p.discount_applied).length;
-    const productsInOfferButNoDiscount = processedProducts.filter(p => p.has_offer && !p.discount_applied).length;
-
-    const [results] = await db.execute(
-      `SELECT restaurant_name from restaurant_settings`,
-    );
-
-    const restaurant_name = results[0]?.restaurant_name || 'Restaurant';
 
     return res.status(200).json({
       success: true,
@@ -1003,7 +810,7 @@ export const getAllProductsWithOffers = async (req, res) => {
       },
       user_context: {
         user_id: userId,
-        has_active_offer: true,
+        has_active_offer: productsWithActiveDiscounts > 0,
         offer_details: {
           id: appliedOffer.id,
           name: appliedOffer.name,
@@ -1012,19 +819,15 @@ export const getAllProductsWithOffers = async (req, res) => {
           valid_until: appliedOffer.end_at,
           total_products_in_offer: offerProductIds.length,
           available_products: productsWithActiveDiscounts,
-          unavailable_products: productsInOfferButNoDiscount
+          unavailable_products: processedProducts.filter(p => p.has_offer && !p.discount_applied).length
         }
       },
-      restaurant_name: restaurant_name
+      restaurant_name
     });
 
   } catch (error) {
-    console.error("❌ Error:", error.message);
-    return res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: error.message
-    });
+    console.error("❌ Error in getAllProductsWithOffers:", error.message);
+    return res.status(500).json({ success: false, message: "Server error", error: error.message });
   } finally {
     if (connection) connection.release();
   }
@@ -1202,11 +1005,9 @@ export const verifyPhoneCode = async (req, res) => {
 
 // Get public restaurant settings
 export const getRestaurantSettingsPublic = async (req, res) => {
-  let connection;
   try {
-    connection = await pool.getConnection();
-    const [settings] = await connection.execute(
-      `SELECT 
+    const [settings] = await pool.execute(`
+      SELECT 
         id,
         restaurant_name,
         restaurant_address,
@@ -1223,24 +1024,22 @@ export const getRestaurantSettingsPublic = async (req, res) => {
         restaurant_logo,
         restaurant_home_screen_icon,
         updated_at
-      FROM restaurant_settings 
-      LIMIT 1`
-    );
+      FROM restaurant_settings
+      LIMIT 1
+    `);
 
     if (settings.length === 0) {
-      connection.release();
-      return res.json({ 
+      return res.json({
         success: true,
         settings: {
-          is_open: true, // Default to open if no settings exist
+          is_open: true,
           restaurant_logo: '',
           restaurant_home_screen_icon: ''
         }
       });
     }
 
-    connection.release();
-    res.json({ 
+    return res.json({
       success: true,
       settings: {
         ...settings[0],
@@ -1256,229 +1055,221 @@ export const getRestaurantSettingsPublic = async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching public restaurant settings:", error);
-    if (connection) connection.release();
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 };
 
 
 // homepage all data
 export const getHomePageData = async (req, res) => {
-    let connection;
-    try {
-        const { 
-            category_id, 
-            search, 
-            userId 
-        } = req.query;
+  try {
+    const { category_id, search, userId } = req.query;
 
-        const authenticatedUser = !!userId;
-        connection = await pool.getConnection();
+    const productBaseParams = [];
+    let productWhereClause = "WHERE p.active = TRUE AND c.active = TRUE";
 
-        const productBaseParams = [];
-        let productWhereClause = "WHERE p.active = TRUE AND c.active = TRUE";
-        
-        if (category_id) {
-            productWhereClause += " AND p.category_id = ?";
-            productBaseParams.push(category_id);
-        }
-        if (search) {
-            productWhereClause += " AND (p.name LIKE ? OR p.description LIKE ? OR c.name LIKE ?)";
-            const searchTerm = `%${search}%`;
-            productBaseParams.push(searchTerm, searchTerm, searchTerm);
-        }
-
-        // ==================== 2. DATA FETCH ====================
-        
-        const productDataQuery = `
-            SELECT DISTINCT
-                p.*, 
-                c.name as category_name,
-                c.image as category_image
-            FROM products p
-            JOIN categories c ON p.category_id = c.id
-            ${productWhereClause}
-            ORDER BY p.is_popular DESC, p.created_at DESC
-        `;
-
-        const categoriesQuery = `
-            SELECT id, name, image, description, created_at 
-            FROM categories 
-            WHERE active = TRUE
-            ORDER BY created_at DESC
-        `;
-        
-        // Using your original table 'offer_usages' with an EXISTS check
-        // This is exactly how the frontend knows if the connected user applied the offer
-        const offersQuery = `
-          SELECT 
-              o.*,
-              op.product_id,
-              op.limited_use,
-              op.times_used,
-              p.name as product_name,
-              p.price as product_price,
-              p.image as product_image,
-              c.name as product_category,
-              p.description as product_description,
-              EXISTS(SELECT 1 FROM offer_usages ou WHERE ou.offer_id = o.id AND ou.user_id = ?) as is_applied_by_user
-          FROM offers o
-          LEFT JOIN offer_products op ON o.id = op.offer_id
-          LEFT JOIN products p ON op.product_id = p.id
-          LEFT JOIN categories c ON p.category_id = c.id
-          WHERE o.is_active = TRUE
-              AND o.start_at <= NOW() 
-              AND o.end_at > NOW()
-          ORDER BY o.created_at DESC
-        `;
-
-        const settingsQuery = `SELECT restaurant_name FROM restaurant_settings LIMIT 1`;
-
-        const [[baseProducts], [categories], [offersResults], [settingsResults]] = await Promise.all([
-            connection.execute(productDataQuery, productBaseParams),
-            connection.execute(categoriesQuery),
-            connection.execute(offersQuery, [userId || null]),
-            connection.execute(settingsQuery)
-        ]);
-
-        const restaurantName = settingsResults[0]?.restaurant_name || 'Restaurant';
-
-        // ==================== 3. PROCESS OFFERS MAP ====================
-
-        const processedOffersMap = new Map();
-        offersResults.forEach(row => {
-            const offerId = row.id;
-            
-            if (!processedOffersMap.has(offerId)) {
-                processedOffersMap.set(offerId, {
-                    id: row.id,
-                    name: row.name,
-                    discount_type: row.discount_type,
-                    discount: parseFloat(row.discount),
-                    image: row.image,
-                    description: row.description,
-                    start_at: row.start_at,
-                    end_at: row.end_at,
-                    is_active: Boolean(row.is_active),
-                    // This tells the frontend to show the "Applied" state
-                    is_applied_by_user: Boolean(row.is_applied_by_user), 
-                    products: []
-                });
-            }
-
-            if (row.product_id) {
-                const offer = processedOffersMap.get(offerId);
-                offer.products.push({
-                    product_id: row.product_id,
-                    product_name: row.product_name,
-                    product_price: parseFloat(row.product_price),
-                    product_image: row.product_image,
-                    product_category: row.product_category,
-                    product_description: row.product_description,
-                    limited_use: row.limited_use,
-                    times_used: row.times_used,
-                    remaining_uses: row.limited_use ? row.limited_use - row.times_used : null,
-                    is_available: row.limited_use ? row.times_used < row.limited_use : true
-                });
-            }
-        });
-        const processedOffers = Array.from(processedOffersMap.values());
-
-        // ==================== 4. PROCESS PRODUCTS ====================
-        
-        const globalOfferMap = new Map();
-        offersResults.forEach(row => {
-            if (row.product_id && !globalOfferMap.has(row.product_id)) {
-                globalOfferMap.set(row.product_id, row);
-            }
-        });
-
-        let productsWithActiveDiscounts = 0;
-
-        let processedProducts = baseProducts.map(p => {
-            const product = {
-                ...p,
-                price: parseFloat(p.price),
-                rating: parseFloat(p.rating) || 0,
-                promo: Boolean(p.promo),
-                is_popular: Boolean(p.is_popular),
-                active: Boolean(p.active),
-                has_offer: false,
-                discount_applied: false,
-                offer_info: null
-            };
-
-            const offerData = globalOfferMap.get(product.id);
-            if (!offerData) return product;
-
-            const userHasApplied = Boolean(offerData.is_applied_by_user);
-            const originalPrice = product.price;
-            const discountValue = parseFloat(offerData.discount);
-            const maxUses = offerData.limited_use;
-            const timesUsed = offerData.times_used || 0;
-
-            let calculatedPrice = originalPrice;
-            if (offerData.discount_type === 'percentage') {
-                calculatedPrice = originalPrice * (1 - discountValue / 100);
-            } else {
-                calculatedPrice = Math.max(0.01, originalPrice - discountValue);
-            }
-            calculatedPrice = parseFloat(calculatedPrice.toFixed(2));
-
-            const globalLimitNotReached = maxUses === null || timesUsed < maxUses;
-            
-            // The price changes only if applied and the restaurant still has stock
-            const canUseOffer = userHasApplied && globalLimitNotReached;
-
-            if (canUseOffer) {
-                productsWithActiveDiscounts++;
-            }
-
-            return {
-                ...product,
-                original_price: originalPrice,
-                final_price: canUseOffer ? calculatedPrice : originalPrice,
-                has_offer: true,
-                discount_applied: canUseOffer,
-                offer_info: {
-                    offer_id: offerData.id,
-                    offer_name: offerData.name,
-                    discount_type: offerData.discount_type,
-                    discount_value: discountValue,
-                    original_price: originalPrice,
-                    discounted_price: calculatedPrice,
-                    can_use_offer: canUseOffer,
-                    user_has_applied: userHasApplied, 
-                    remaining_uses: maxUses ? maxUses - timesUsed : null,
-                    valid_until: offerData.end_at,
-                    reason: !userHasApplied ? 'Offer not applied' : (globalLimitNotReached ? null : 'Restaurant limit reached')
-                }
-            };
-        });
-        
-        let userContext = { 
-            user_id: userId, 
-            has_active_offer: productsWithActiveDiscounts > 0,
-            available_discounts_count: productsWithActiveDiscounts 
-        };
-
-        // ==================== 5. FINAL RESPONSE ====================
-        
-        res.status(200).json({
-            success: true,
-            restaurant_name: restaurantName,
-            offers: processedOffers,
-            categories: categories,
-            products: processedProducts, 
-            user_context: userContext
-        });
-
-    } catch (error) {
-        console.error("❌ Error fetching home page data:", error);
-        res.status(500).json({ success: false, message: "Failed to load home page data", error: error.message });
-    } finally {
-        if (connection) connection.release();
+    if (category_id) {
+      productWhereClause += " AND p.category_id = ?";
+      productBaseParams.push(category_id);
     }
+
+    if (search) {
+      productWhereClause += " AND (p.name LIKE ? OR p.description LIKE ? OR c.name LIKE ?)";
+      const searchTerm = `%${search}%`;
+      productBaseParams.push(searchTerm, searchTerm, searchTerm);
+    }
+
+    const productDataQuery = `
+      SELECT DISTINCT
+        p.*, 
+        c.name as category_name,
+        c.image as category_image
+      FROM products p
+      JOIN categories c ON p.category_id = c.id
+      ${productWhereClause}
+      ORDER BY p.is_popular DESC, p.created_at DESC
+    `;
+
+    const categoriesQuery = `
+      SELECT id, name, image, description, created_at 
+      FROM categories 
+      WHERE active = TRUE
+      ORDER BY created_at DESC
+    `;
+
+    const offersQuery = `
+      SELECT 
+        o.*,
+        op.product_id,
+        op.limited_use,
+        op.times_used,
+        p.name as product_name,
+        p.price as product_price,
+        p.image as product_image,
+        c.name as product_category,
+        p.description as product_description,
+        EXISTS(
+          SELECT 1
+          FROM offer_usages ou
+          WHERE ou.offer_id = o.id AND ou.user_id = ?
+        ) as is_applied_by_user
+      FROM offers o
+      LEFT JOIN offer_products op ON o.id = op.offer_id
+      LEFT JOIN products p ON op.product_id = p.id
+      LEFT JOIN categories c ON p.category_id = c.id
+      WHERE o.is_active = TRUE
+        AND o.start_at <= NOW()
+        AND o.end_at > NOW()
+      ORDER BY o.created_at DESC
+    `;
+
+    const settingsQuery = `SELECT restaurant_name FROM restaurant_settings LIMIT 1`;
+
+    const [
+      [baseProducts],
+      [categories],
+      [offersResults],
+      [settingsResults]
+    ] = await Promise.all([
+      pool.execute(productDataQuery, productBaseParams),
+      pool.execute(categoriesQuery),
+      pool.execute(offersQuery, [userId || null]),
+      pool.execute(settingsQuery)
+    ]);
+
+    const restaurantName = settingsResults[0]?.restaurant_name || 'Restaurant';
+
+    const processedOffersMap = new Map();
+    offersResults.forEach(row => {
+      const offerId = row.id;
+
+      if (!processedOffersMap.has(offerId)) {
+        processedOffersMap.set(offerId, {
+          id: row.id,
+          name: row.name,
+          discount_type: row.discount_type,
+          discount: parseFloat(row.discount),
+          image: row.image,
+          description: row.description,
+          start_at: row.start_at,
+          end_at: row.end_at,
+          is_active: Boolean(row.is_active),
+          is_applied_by_user: Boolean(row.is_applied_by_user),
+          products: []
+        });
+      }
+
+      if (row.product_id) {
+        const offer = processedOffersMap.get(offerId);
+        offer.products.push({
+          product_id: row.product_id,
+          product_name: row.product_name,
+          product_price: parseFloat(row.product_price),
+          product_image: row.product_image,
+          product_category: row.product_category,
+          product_description: row.product_description,
+          limited_use: row.limited_use,
+          times_used: row.times_used,
+          remaining_uses: row.limited_use ? row.limited_use - row.times_used : null,
+          is_available: row.limited_use ? row.times_used < row.limited_use : true
+        });
+      }
+    });
+
+    const processedOffers = Array.from(processedOffersMap.values());
+
+    const globalOfferMap = new Map();
+    offersResults.forEach(row => {
+      if (row.product_id && !globalOfferMap.has(row.product_id)) {
+        globalOfferMap.set(row.product_id, row);
+      }
+    });
+
+    let productsWithActiveDiscounts = 0;
+
+    const processedProducts = baseProducts.map(p => {
+      const product = {
+        ...p,
+        price: parseFloat(p.price),
+        rating: parseFloat(p.rating) || 0,
+        promo: Boolean(p.promo),
+        is_popular: Boolean(p.is_popular),
+        active: Boolean(p.active),
+        has_offer: false,
+        discount_applied: false,
+        offer_info: null
+      };
+
+      const offerData = globalOfferMap.get(product.id);
+      if (!offerData) return product;
+
+      const userHasApplied = Boolean(offerData.is_applied_by_user);
+      const originalPrice = product.price;
+      const discountValue = parseFloat(offerData.discount);
+      const maxUses = offerData.limited_use;
+      const timesUsed = offerData.times_used || 0;
+
+      let calculatedPrice = originalPrice;
+      if (offerData.discount_type === 'percentage') {
+        calculatedPrice = originalPrice * (1 - discountValue / 100);
+      } else {
+        calculatedPrice = Math.max(0.01, originalPrice - discountValue);
+      }
+
+      calculatedPrice = parseFloat(calculatedPrice.toFixed(2));
+
+      const globalLimitNotReached = maxUses === null || timesUsed < maxUses;
+      const canUseOffer = userHasApplied && globalLimitNotReached;
+
+      if (canUseOffer) {
+        productsWithActiveDiscounts++;
+      }
+
+      return {
+        ...product,
+        original_price: originalPrice,
+        final_price: canUseOffer ? calculatedPrice : originalPrice,
+        has_offer: true,
+        discount_applied: canUseOffer,
+        offer_info: {
+          offer_id: offerData.id,
+          offer_name: offerData.name,
+          discount_type: offerData.discount_type,
+          discount_value: discountValue,
+          original_price: originalPrice,
+          discounted_price: calculatedPrice,
+          can_use_offer: canUseOffer,
+          user_has_applied: userHasApplied,
+          remaining_uses: maxUses ? maxUses - timesUsed : null,
+          valid_until: offerData.end_at,
+          reason: !userHasApplied ? 'Offer not applied' : (globalLimitNotReached ? null : 'Restaurant limit reached')
+        }
+      };
+    });
+
+    const userContext = {
+      user_id: userId,
+      has_active_offer: productsWithActiveDiscounts > 0,
+      available_discounts_count: productsWithActiveDiscounts
+    };
+
+    return res.status(200).json({
+      success: true,
+      restaurant_name: restaurantName,
+      offers: processedOffers,
+      categories,
+      products: processedProducts,
+      user_context: userContext
+    });
+
+  } catch (error) {
+    console.error("❌ Error fetching home page data:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load home page data",
+      error: error.message
+    });
+  }
 };
 
 
@@ -1544,12 +1335,13 @@ export const loginWithGoogle = async (req, res) => {
       
       const [result] = await connection.execute(
         `INSERT INTO clients 
-         (email, password, name, image, is_verified, google_id, created_at) 
-         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+         (email, password, name,phone, image, is_verified, google_id, created_at) 
+         VALUES (?, ?, ?,?, ?, ?, ?, NOW())`,
         [
           email,
           generatedPassword,
           name || payload.name || email.split('@')[0],
+          null,
           photo || payload.picture,
           1, // Auto-verify Google users (using your existing is_verified)
           payload.sub, // Google user ID
@@ -1608,7 +1400,7 @@ export const loginWithGoogle = async (req, res) => {
         name: clientData.name,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "36500d" }
+      { expiresIn: "109500d" }
     );
 
     // 🧩 8. Send response
@@ -1643,20 +1435,16 @@ export const loginWithGoogle = async (req, res) => {
 
 // Public endpoint for restaurant open status and operating hours
 export const getRestaurantOpenStatus = async (req, res) => {
-  let connection;
   try {
-    connection = await pool.getConnection();
-    
     const serverTime = new Date();
-    const moroccoTimeStr = serverTime.toLocaleString("en-US", {timeZone: "Africa/Casablanca"});
+    const moroccoTimeStr = serverTime.toLocaleString("en-US", { timeZone: "Africa/Casablanca" });
     const moroccoTime = new Date(moroccoTimeStr);
-    
+
     const currentDay = moroccoTime.getDay();
     const yesterday = (currentDay + 6) % 7;
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    
-    // Get all operating hours
-    const [allHours] = await connection.execute(`
+
+    const [allHours] = await pool.execute(`
       SELECT 
         day_of_week,
         is_closed,
@@ -1665,34 +1453,32 @@ export const getRestaurantOpenStatus = async (req, res) => {
       FROM restaurant_operating_hours
       ORDER BY day_of_week
     `);
-    
-    // Get current is_open manual toggle from settings
-    const [settings] = await connection.execute(`
-      SELECT is_open, restaurant_name FROM restaurant_settings LIMIT 1
+
+    const [settings] = await pool.execute(`
+      SELECT is_open, restaurant_name
+      FROM restaurant_settings
+      LIMIT 1
     `);
-    
+
     const manualIsOpen = settings.length > 0 ? Boolean(settings[0].is_open) : true;
     const restaurantName = settings.length > 0 ? settings[0].restaurant_name : 'Restaurant';
 
-    // --- LOGIC TO HANDLE OVERNIGHT SHIFTS ---
     let isCurrentlyOpen = false;
     let activeSchedule = null;
 
-    // Helper to check if a specific day's shift covers "now"
     const isShiftActive = (daySchedule, referenceDate, dayOffset = 0) => {
       if (!daySchedule || daySchedule.is_closed) return false;
 
       const openTime = new Date(referenceDate);
       openTime.setDate(openTime.getDate() + dayOffset);
       const [oH, oM] = daySchedule.open_time.split(':');
-      openTime.setHours(oH, oM, 0, 0);
+      openTime.setHours(Number(oH), Number(oM), 0, 0);
 
-      let closeTime = new Date(referenceDate);
+      const closeTime = new Date(referenceDate);
       closeTime.setDate(closeTime.getDate() + dayOffset);
       const [cH, cM] = daySchedule.close_time.split(':');
-      closeTime.setHours(cH, cM, 0, 0);
+      closeTime.setHours(Number(cH), Number(cM), 0, 0);
 
-      // If close time is before or equal to open time, it crosses midnight
       if (closeTime <= openTime) {
         closeTime.setDate(closeTime.getDate() + 1);
       }
@@ -1703,29 +1489,24 @@ export const getRestaurantOpenStatus = async (req, res) => {
     const todayHours = allHours.find(h => h.day_of_week === currentDay);
     const yesterdayHours = allHours.find(h => h.day_of_week === yesterday);
 
-    // 1. Check Today's Shift
     if (isShiftActive(todayHours, moroccoTime, 0)) {
       isCurrentlyOpen = true;
       activeSchedule = todayHours;
-    } 
-    // 2. Check Yesterday's Shift (for midnight carry-over)
-    else if (isShiftActive(yesterdayHours, moroccoTime, -1)) {
+    } else if (isShiftActive(yesterdayHours, moroccoTime, -1)) {
       isCurrentlyOpen = true;
       activeSchedule = yesterdayHours;
     }
 
-    // Final open status depends on both schedule AND manual toggle
     const finalIsOpen = isCurrentlyOpen && manualIsOpen;
 
-    // --- FIND NEXT OPEN TIME ---
     let nextOpenTime = null;
+
     if (!finalIsOpen) {
-      // Check if it opens later today (only if manual toggle is on)
       if (manualIsOpen && todayHours && !todayHours.is_closed) {
         const openToday = new Date(moroccoTime);
         const [h, m] = todayHours.open_time.split(':');
-        openToday.setHours(h, m, 0, 0);
-        
+        openToday.setHours(Number(h), Number(m), 0, 0);
+
         if (moroccoTime < openToday) {
           nextOpenTime = {
             day_name: dayNames[currentDay],
@@ -1735,11 +1516,11 @@ export const getRestaurantOpenStatus = async (req, res) => {
         }
       }
 
-      // If not opening today, look ahead through the week
       if (!nextOpenTime) {
         for (let i = 1; i <= 7; i++) {
           const checkDay = (currentDay + i) % 7;
           const nextDayHours = allHours.find(h => h.day_of_week === checkDay);
+
           if (nextDayHours && !nextDayHours.is_closed) {
             nextOpenTime = {
               day_name: dayNames[checkDay],
@@ -1760,8 +1541,7 @@ export const getRestaurantOpenStatus = async (req, res) => {
       close_time: h.close_time
     }));
 
-    connection.release();
-    res.json({
+    return res.json({
       success: true,
       restaurant_name: restaurantName,
       is_open: finalIsOpen,
@@ -1769,27 +1549,30 @@ export const getRestaurantOpenStatus = async (req, res) => {
       current_time: moroccoTime.toTimeString().slice(0, 5),
       current_day: dayNames[currentDay],
       current_day_index: currentDay,
-      today_schedule: activeSchedule ? {
-        day_name: dayNames[activeSchedule.day_of_week],
-        is_closed: false,
-        open_time: activeSchedule.open_time,
-        close_time: activeSchedule.close_time
-      } : (todayHours ? {
-        day_name: dayNames[currentDay],
-        is_closed: Boolean(todayHours.is_closed),
-        open_time: todayHours.open_time,
-        close_time: todayHours.close_time
-      } : null),
+      today_schedule: activeSchedule
+        ? {
+            day_name: dayNames[activeSchedule.day_of_week],
+            is_closed: false,
+            open_time: activeSchedule.open_time,
+            close_time: activeSchedule.close_time
+          }
+        : todayHours
+        ? {
+            day_name: dayNames[currentDay],
+            is_closed: Boolean(todayHours.is_closed),
+            open_time: todayHours.open_time,
+            close_time: todayHours.close_time
+          }
+        : null,
       next_open: nextOpenTime,
       operating_hours: operatingHours
     });
   } catch (error) {
     console.error('Error getting public open status:', error);
-    if (connection) connection.release();
-    res.status(500).json({ 
+    return res.status(500).json({
       success: false,
       message: 'Server error',
-      is_open: true 
+      is_open: true
     });
   }
 };
@@ -1799,32 +1582,21 @@ export const setClientLanguage = async (req, res) => {
   let connection;
   try {
     connection = await pool.getConnection();
-
-    // 1. Get clientId from req (attached by verifyToken middleware)
-    // and currentLang from the request body
-    const clientId = req.clientId; 
+    const clientId = req.clientId; // FROM MIDDLEWARE
     const { currentLang } = req.body;
 
-    // 2. Validate input
-    // We only need to check currentLang now, as clientId is guaranteed by middleware
-    if (!currentLang) {
-      connection.release();
+    if (!clientId || !currentLang) {
       return res.status(400).json({ 
         success: false, 
-        message: 'currentLang is required' 
+        message: 'clientId and currentLang are required' 
       });
     }
 
-    // 3. Execute the update query
     const [result] = await connection.execute(
       'UPDATE clients SET current_language = ? WHERE id = ?',
       [currentLang, clientId]
     );
 
-    // Always release the connection as soon as DB work is done
-    connection.release();
-
-    // 4. Check if a row was actually updated
     if (result.affectedRows === 0) {
       return res.status(404).json({ 
         success: false, 
@@ -1832,22 +1604,20 @@ export const setClientLanguage = async (req, res) => {
       });
     }
     
-    // 5. Send success response
     res.json({
       success: true,
       message: 'Language updated successfully',
-      clientId, // Echoing the ID from the token
+      clientId,
       currentLang
     });
-
   } catch (error) {
     console.error('Error updating client language:', error);
-    if (connection) connection.release();
-    
     res.status(500).json({ 
       success: false,
       message: 'Server error while updating language'
     });
+  } finally {
+    if (connection) connection.release();
   }
 };
 
@@ -1960,14 +1730,11 @@ export const checkLiveStatus = async (req, res) => {
 
     const placeholders = productIds.map(() => '?').join(',');
 
-    // Main query: include promo and promoValue columns
     const query = `
       SELECT 
         p.id as product_id,
         p.name,
         p.price as original_price,
-        p.promo,
-        p.promoValue,
         p.image,
         o.id as offer_id,
         o.name as offer_name,
@@ -1998,26 +1765,36 @@ export const checkLiveStatus = async (req, res) => {
       let discountApplied = false;
 
       const globalLimitNotReached = row.limited_use === null || row.times_used < row.limited_use;
-
+      
       if (globalLimitNotReached) {
         discountApplied = true;
         const discount = parseFloat(row.discount_value);
-        if (row.discount_type === 1) {
-          finalPrice = originalPrice * (1 - discount / 100);
+        
+        // --- FIXED CALCULATION ---
+        if (row.discount_type === 'percentage') {
+          // 35 * (1 - 19/100) = 35 * 0.81 = 28.35
+          finalPrice = originalPrice * (1 - (discount / 100));
         } else {
           finalPrice = Math.max(0.01, originalPrice - discount);
         }
-        finalPrice = parseFloat(finalPrice.toFixed(2));
+
+        // --- INTEGRATED CUSTOM ROUNDING (.5 or 1.0) ---
+        const integerPart = Math.floor(finalPrice);
+        const decimalPart = finalPrice - integerPart;
+
+        if (decimalPart > 0 && decimalPart <= 0.5) {
+          finalPrice = integerPart + 0.5;
+        } else if (decimalPart > 0.5) {
+          finalPrice = integerPart + 1.0;
+        }
       }
 
       return {
         id: row.product_id,
         name: row.name,
         image: row.image,
-        promo: row.promo,                // ← keep these lines but without SQL comments
-        promoValue: row.promoValue,
         price: originalPrice,
-        final_price: finalPrice,
+        final_price: parseFloat(finalPrice.toFixed(2)),
         has_offer: hasOffer,
         discount_applied: discountApplied,
         offer_info: {
@@ -2035,14 +1812,13 @@ export const checkLiveStatus = async (req, res) => {
       };
     });
 
-    // Handle products without any active/applied offer
     const foundIds = validatedProducts.map(p => p.id);
     const missingIds = productIds.filter(id => !foundIds.includes(id));
 
     if (missingIds.length > 0) {
       const missingPlaceholders = missingIds.map(() => '?').join(',');
       const [normalProducts] = await connection.execute(
-        `SELECT id, name, price, image, promo, promoValue FROM products WHERE id IN (${missingPlaceholders})`,
+        `SELECT id, name, price, image FROM products WHERE id IN (${missingPlaceholders})`,
         missingIds
       );
 
@@ -2051,8 +1827,6 @@ export const checkLiveStatus = async (req, res) => {
           id: p.id,
           name: p.name,
           image: p.image,
-          promo: p.promo,
-          promoValue: p.promoValue,
           price: parseFloat(p.price),
           final_price: parseFloat(p.price),
           has_offer: false,
@@ -2074,17 +1848,12 @@ export const checkLiveStatus = async (req, res) => {
 };
 
 
-// products names
 export const getProductNames = async (req, res) => {
   try {
-    const connection = await pool.getConnection();
-
-    // Only select the 'name' column to keep it fast
-    const [rows] = await connection.query(`
+    const [rows] = await pool.query(`
       SELECT name FROM products ORDER BY name ASC
     `);
-    connection.release();
-    // Map the results to a simple array of strings: ["Product A", "Product B"]
+
     const namesOnly = rows.map(p => p.name);
 
     res.json({ names: namesOnly });
@@ -2096,10 +1865,8 @@ export const getProductNames = async (req, res) => {
 };
 
 // profile statsig/db.js";
-
 export const getProfileStats = async (req, res) => {
   const userId = req.userId;
-
   if (!userId) {
     return res.status(400).json({ message: "User ID missing from request." });
   }

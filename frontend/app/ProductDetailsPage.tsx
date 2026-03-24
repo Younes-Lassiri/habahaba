@@ -347,6 +347,20 @@ const BurgerOrderScreen: React.FC<ProductDetailsPageProps> = ({
   if (!selectedItem && products.length > 0) {
     return (
       <SafeAreaView style={[newStyles.container, { paddingTop: insets.top }]}>
+        {/* ✅ This fills the status bar area on iOS with your primary color */}
+                {Platform.OS === 'ios' && (
+                  <View
+                    style={{
+                      height: insets.top,
+                      backgroundColor: Colors.primary,
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      zIndex: 999,
+                    }}
+                  />
+                )}
         <View style={newStyles.errorContainer}>
           <Ionicons name="alert-circle-outline" size={64} color={AMBER} />
           <Text style={newStyles.errorTitle}>Product not found</Text>
@@ -362,6 +376,20 @@ const BurgerOrderScreen: React.FC<ProductDetailsPageProps> = ({
   if (!selectedItem) {
     return (
       <SafeAreaView style={[newStyles.container, { paddingTop: insets.top }]}>
+        {/* ✅ This fills the status bar area on iOS with your primary color */}
+                {Platform.OS === 'ios' && (
+                  <View
+                    style={{
+                      height: insets.top,
+                      backgroundColor: Colors.primary,
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      zIndex: 999,
+                    }}
+                  />
+                )}
         <View style={newStyles.loadingContainer}>
           <ActivityIndicator size="large" color={AMBER} />
           <Text style={newStyles.loadingText}>Loading product details...</Text>
@@ -376,6 +404,20 @@ const BurgerOrderScreen: React.FC<ProductDetailsPageProps> = ({
 
   return (
     <SafeAreaView style={[newStyles.container, { paddingTop: insets.top }]}>
+      {/* ✅ This fills the status bar area on iOS with your primary color */}
+              {Platform.OS === 'ios' && (
+                <View
+                  style={{
+                    height: insets.top,
+                    backgroundColor: Colors.primary,
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    zIndex: 999,
+                  }}
+                />
+              )}
       <View style={{ zIndex: 100 }}><Toast /></View>
       <KeyboardAvoidingView
         style={{ flex: 1 }}

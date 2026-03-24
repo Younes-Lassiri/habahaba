@@ -425,6 +425,20 @@ const FavoriteScreen: React.FC<FavoriteScreenProps> = () => {
   if (loadingLang || loading) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
+        {/* ✅ This fills the status bar area on iOS with your primary color */}
+                {Platform.OS === 'ios' && (
+                  <View
+                    style={{
+                      height: insets.top,
+                      backgroundColor: Colors.primary,
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      zIndex: 999,
+                    }}
+                  />
+                )}
         <View style={[styles.header, isRTL && { flexDirection: 'row-reverse' }]}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Ionicons name={isRTL ? 'arrow-forward' : 'arrow-back'} size={24} color={Colors.text.primary} />
@@ -442,7 +456,21 @@ const FavoriteScreen: React.FC<FavoriteScreenProps> = () => {
   }
 
   return (
-    <View style={[styles.container, Platform.OS === 'android' ? { paddingTop: insets.top } : null]}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* ✅ This fills the status bar area on iOS with your primary color */}
+              {Platform.OS === 'ios' && (
+                <View
+                  style={{
+                    height: insets.top,
+                    backgroundColor: Colors.primary,
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    zIndex: 999,
+                  }}
+                />
+              )}
       <View style={{ zIndex: 100 }}><Toast /></View>
 
       {/* Header */}

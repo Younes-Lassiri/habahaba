@@ -17,6 +17,7 @@ import Offers from './pages/Offers'
 import OrderRatings from './pages/OrderRatings'
 import TermsAndServices from './pages/TermsAndServices'
 import PrivacyPolicy from './pages/PrivacyPolicy'
+import HabaHabaDownloadPage from './pages/LandingPage'
 function PrivateRoute({ children }) {
   const { isAuthenticated, token, admin } = useAuthStore()
   
@@ -51,6 +52,7 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="terms-services" element={<TermsAndServices/>} />
           <Route path="privacy-policy" element={<PrivacyPolicy/>} />
+          <Route path="haba-haba-restaurant" element={<HabaHabaDownloadPage/>} />
           <Route
             path="/"
             element={

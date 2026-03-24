@@ -9,6 +9,7 @@ import {
   Alert,
   Image,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -19,10 +20,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch } from 'react-redux';
 import { setLanguage } from './redux/slices/languageSlice';
-// Remove this line: import useLogout from './logout';
-import { useAuth } from '../contexts/AuthContext'; // ADD THIS
-
-// SVG Icons (unchanged) ...
+import { useAuth } from '../contexts/AuthContext';
 
 interface ProfileStats {
   totalOrders: number;
@@ -38,12 +36,12 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
   userLanguage = 'english',
 }) => {
   const dispatch = useDispatch();
-  // Remove: const logout = useLogout();
-  const { logout } = useAuth(); // ADD THIS - use the auth context
-  
+  const { logout } = useAuth();
+
   const [loading, setLoading] = useState(true);
   const [loadingPhone, setLoadingPhone] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false); // NEW
   const [client, setClient] = useState<any>({
     name: '',
     email: '',
@@ -57,16 +55,12 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
     favorite: 'N/A',
   });
 
-  // Local language state to ensure UI updates immediately
   const [currentLanguage, setCurrentLanguage] = useState<'english' | 'arabic' | 'french'>(userLanguage);
-
-  // Language modal state
   const [showLanguageModal, setShowLanguageModal] = useState(false);
   const languages = ['English', 'Arabic', 'French'];
 
   const insets = useSafeAreaInsets();
 
-  // Sync with AsyncStorage on mount to ensure consistency
   useEffect(() => {
     const loadLanguage = async () => {
       const storedLang = await AsyncStorage.getItem('userLanguage');
@@ -77,18 +71,12 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
     loadLanguage();
   }, []);
 
-  // Translation helper
-  const t = (key: {
-    en: string;
-    ar: string;
-    fr: string;
-  }): string => {
+  const t = (key: { en: string; ar: string; fr: string }): string => {
     if (currentLanguage === 'arabic') return key.ar;
     if (currentLanguage === 'french') return key.fr;
     return key.en;
   };
 
-  // Update language on backend and storage
   const updateLanguage = async (selectedLanguage: string) => {
     try {
       const token = await AsyncStorage.getItem('token');
@@ -100,7 +88,6 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
         return;
       }
 
-      // Map display name to code expected by backend
       const langCode = selectedLanguage === 'English' ? 'english' : selectedLanguage === 'Arabic' ? 'arabic' : 'french';
 
       const response = await axios.post(
@@ -115,13 +102,9 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
       );
 
       if (response.data.success) {
-        // Update local state and storage immediately
         setCurrentLanguage(langCode);
         await AsyncStorage.setItem('userLanguage', langCode);
-        
-        // Dispatch to Redux so that other screens (like tabs) update instantly
         dispatch(setLanguage(langCode));
-        
         setShowLanguageModal(false);
       } else {
         Alert.alert(
@@ -132,10 +115,7 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
     } catch (error: any) {
       console.error('Language update error:', error);
       const errorMessage = error.response?.data?.message || error.message || t({ en: 'Network error. Please try again.', ar: 'خطأ في الشبكة. حاول مرة أخرى.', fr: 'Erreur réseau. Veuillez réessayer.' });
-      Alert.alert(
-        t({ en: 'Error', ar: 'خطأ', fr: 'Erreur' }),
-        errorMessage
-      );
+      Alert.alert(t({ en: 'Error', ar: 'خطأ', fr: 'Erreur' }), errorMessage);
     }
   };
 
@@ -156,9 +136,7 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
       const userData = await AsyncStorage.getItem('client');
       if (userData) {
         const parsed = JSON.parse(userData);
-        setClient({
-          ...parsed,
-        });
+        setClient({ ...parsed });
       }
     } catch (error) {
       console.log('Error fetching user data', error);
@@ -166,43 +144,27 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
   };
 
   const fetchUserStats = async () => {
-  try {
-    // 1. Retrieve the client data and the raw token from storage
-    const userData = await AsyncStorage.getItem('client');
-    const token = await AsyncStorage.getItem('token'); // Get token from storage
+    try {
+      const userData = await AsyncStorage.getItem('client');
+      const token = await AsyncStorage.getItem('token');
+      const user = userData ? JSON.parse(userData) : null;
+      if (!user || !user.id || !token) return;
 
-    const user = userData ? JSON.parse(userData) : null;
+      const res = await axios.get(`https://haba-haba-api.ubua.cloud/api/auth/profile-stats`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
-    // Guard clause: if no user or token, don't attempt the call
-    if (!user || !user.id || !token) return;
+      const { deliveredOrders, favorites, clientmemberSince } = res.data.stats;
 
-    // 2. Make the GET request using the Authorization header
-    const res = await axios.get(`https://haba-haba-api.ubua.cloud/api/auth/profile-stats`, {
-      headers: {
-        Authorization: `Bearer ${token}` // This matches your verifyToken middleware
-      }
-    });
-    
-    // 3. Process the data returned from your getProfileStats controller
-    // Note: Based on the controller we built, the data is in res.data.stats
-    const { deliveredOrders, favorites, clientmemberSince } = res.data.stats;
-
-    // Logic for 'Member Since' (often better to get this directly from a user.created_at field)
-    const memberSince = new Date().toLocaleDateString('en-US', {
-      month: 'short',
-      year: 'numeric'
-    });
-
-    setProfileStats({
-      totalOrders: deliveredOrders, // Use the count from the backend
-      memberSince: clientmemberSince,
-      favorite: favorites,    // Updating to use the real favorite count
-    });
-
-  } catch (error) {
-    console.error('❌ Error fetching user stats:');
-  }
-};
+      setProfileStats({
+        totalOrders: deliveredOrders,
+        memberSince: clientmemberSince,
+        favorite: favorites,
+      });
+    } catch (error) {
+      console.error('❌ Error fetching user stats:');
+    }
+  };
 
   useEffect(() => {
     fetchUserData();
@@ -222,30 +184,127 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
   };
 
   const handleReorder = (): void => {
-    router.push({
-      pathname: '/orders',
-      params: { userLanguage: currentLanguage }
-    });
+    router.push({ pathname: '/orders', params: { userLanguage: currentLanguage } });
   };
 
   const handleCoupons = (): void => {
-    router.push({
-      pathname: '/Offers',
-      params: { userLanguage: currentLanguage }
-    });
+    router.push({ pathname: '/Offers', params: { userLanguage: currentLanguage } });
   };
 
-  // Update the handleLogout function
   const handleLogout = async (): Promise<void> => {
-    await logout(); // This now comes from useAuth()
+    await logout();
   };
 
   const handleLoyaltyRewards = () => {
-    router.push({
-      pathname: '/LoyaltyRewards',
-      params: { userLanguage: currentLanguage }
-    });
+    router.push({ pathname: '/LoyaltyRewards', params: { userLanguage: currentLanguage } });
   };
+
+  // ─── DELETE ACCOUNT ────────────────────────────────────────────────────────
+  const handleDeleteAccount = (): void => {
+    // Step 1: First confirmation
+    Alert.alert(
+      t({ en: 'Delete Account', ar: 'حذف الحساب', fr: 'Supprimer le compte' }),
+      t({
+        en: 'Are you sure you want to permanently delete your account? All your data, orders, and rewards will be lost.',
+        ar: 'هل أنت متأكد أنك تريد حذف حسابك نهائياً؟ ستفقد جميع بياناتك وطلباتك ومكافآتك.',
+        fr: 'Êtes-vous sûr de vouloir supprimer définitivement votre compte ? Toutes vos données, commandes et récompenses seront perdues.',
+      }),
+      [
+        {
+          text: t({ en: 'Cancel', ar: 'إلغاء', fr: 'Annuler' }),
+          style: 'cancel',
+        },
+        {
+          text: t({ en: 'Continue', ar: 'متابعة', fr: 'Continuer' }),
+          style: 'destructive',
+          onPress: () => confirmDeleteAccount(),
+        },
+      ]
+    );
+  };
+
+  const confirmDeleteAccount = (): void => {
+    // Step 2: Final confirmation before irreversible action
+    Alert.alert(
+      t({ en: 'Final Confirmation', ar: 'التأكيد النهائي', fr: 'Confirmation finale' }),
+      t({
+        en: 'This action cannot be undone. Your account will be permanently deleted.',
+        ar: 'لا يمكن التراجع عن هذا الإجراء. سيتم حذف حسابك بشكل نهائي.',
+        fr: 'Cette action est irréversible. Votre compte sera définitivement supprimé.',
+      }),
+      [
+        {
+          text: t({ en: 'Cancel', ar: 'إلغاء', fr: 'Annuler' }),
+          style: 'cancel',
+        },
+        {
+          text: t({ en: 'Delete My Account', ar: 'حذف حسابي', fr: 'Supprimer mon compte' }),
+          style: 'destructive',
+          onPress: () => executeDeleteAccount(),
+        },
+      ]
+    );
+  };
+
+  const executeDeleteAccount = async (): Promise<void> => {
+    setIsDeletingAccount(true);
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        Alert.alert(
+          t({ en: 'Error', ar: 'خطأ', fr: 'Erreur' }),
+          t({ en: 'Authentication token not found. Please log in again.', ar: 'لم يتم العثور على رمز المصادقة. يرجى تسجيل الدخول مرة أخرى.', fr: 'Jeton d\'authentification introuvable. Veuillez vous reconnecter.' })
+        );
+        return;
+      }
+
+      // Call your backend delete account endpoint
+      const response = await axios.delete(
+        'https://haba-haba-api.ubua.cloud/api/auth/delete-account',
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (response.data.success) {
+        // Clear all local storage
+        await AsyncStorage.multiRemove(['token', 'client', 'userLanguage']);
+
+        Alert.alert(
+          t({ en: 'Account Deleted', ar: 'تم حذف الحساب', fr: 'Compte supprimé' }),
+          t({
+            en: 'Your account has been permanently deleted.',
+            ar: 'تم حذف حسابك بشكل نهائي.',
+            fr: 'Votre compte a été définitivement supprimé.',
+          }),
+          [
+            {
+              text: t({ en: 'OK', ar: 'حسناً', fr: 'OK' }),
+              onPress: () => router.replace('/signin'),
+            },
+          ]
+        );
+      } else {
+        Alert.alert(
+          t({ en: 'Error', ar: 'خطأ', fr: 'Erreur' }),
+          response.data.message || t({ en: 'Failed to delete account. Please try again.', ar: 'فشل في حذف الحساب. حاول مرة أخرى.', fr: 'Échec de la suppression du compte. Veuillez réessayer.' })
+        );
+      }
+    } catch (error: any) {
+      console.error('Delete account error:', error);
+      const errorMessage =
+        error.response?.data?.message ||
+        error.message ||
+        t({ en: 'Network error. Please try again.', ar: 'خطأ في الشبكة. حاول مرة أخرى.', fr: 'Erreur réseau. Veuillez réessayer.' });
+      Alert.alert(t({ en: 'Error', ar: 'خطأ', fr: 'Erreur' }), errorMessage);
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+  // ──────────────────────────────────────────────────────────────────────────
 
   const sendVerificationCode = async () => {
     if (!client?.phone) {
@@ -260,14 +319,8 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
     try {
       const response = await axios.post(
         'https://haba-haba-api.ubua.cloud/api/auth/send-verification-code',
-        {
-          phone: client.phone
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        }
+        { phone: client.phone },
+        { headers: { 'Content-Type': 'application/json' } }
       );
       if (!response.data.success) {
         router.push('/verifyMyPhone');
@@ -301,7 +354,6 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
 
   const isRTL = currentLanguage === 'arabic';
 
-  // Helper to get display name for current language
   const getCurrentLanguageDisplay = () => {
     switch (currentLanguage) {
       case 'arabic': return 'العربية';
@@ -312,9 +364,22 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <ScrollView 
-        style={styles.scrollView} 
-        showsVerticalScrollIndicator={false} 
+      {Platform.OS === 'ios' && (
+        <View
+          style={{
+            height: insets.top,
+            backgroundColor: Colors.primary,
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 999,
+          }}
+        />
+      )}
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {/* Header */}
@@ -335,22 +400,16 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
           </View>
         ) : (
           <View style={styles.profileSection}>
-            {/* Avatar with camera overlay */}
             <View style={styles.avatarWrapper}>
               <TouchableOpacity
                 style={styles.avatarContainer}
                 activeOpacity={0.8}
-                onPress={() =>
-                  router.push({
-                    pathname: '/editProfile',
-                    params: { userLanguage: currentLanguage }
-                  })
-                }
+                onPress={() => router.push({ pathname: '/editProfile', params: { userLanguage: currentLanguage } })}
               >
                 {client.image ? (
                   <Image
                     source={{
-                      uri: client.image.startsWith("http") || client.image.startsWith("file://")
+                      uri: client.image.startsWith('http') || client.image.startsWith('file://')
                         ? client.image
                         : `https://haba-haba-api.ubua.cloud/uploads/profileImages/${client.image}`,
                     }}
@@ -361,14 +420,12 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
                     <Ionicons name="person" size={36} color="#FFFFFF" />
                   </View>
                 )}
-                {/* Camera icon overlay */}
                 <View style={styles.cameraOverlay}>
                   <Ionicons name="camera" size={20} color="#FFFFFF" />
                 </View>
               </TouchableOpacity>
             </View>
 
-            {/* Name and Email - Centered */}
             <View style={styles.profileDetails}>
               <Text style={[styles.profileName, isRTL && styles.profileNameAr]}>
                 {client.name || t({ en: 'User', ar: 'مستخدم', fr: 'Utilisateur' })}
@@ -378,20 +435,15 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
               </Text>
             </View>
 
-            {/* Stats Card */}
             <View style={styles.statsCard}>
               <View style={[styles.statItem, styles.statItemBorder]}>
-                <Text style={[styles.statNumber, isRTL && styles.statNumberAr]}>
-                  {profileStats.totalOrders}
-                </Text>
+                <Text style={[styles.statNumber, isRTL && styles.statNumberAr]}>{profileStats.totalOrders}</Text>
                 <Text style={[styles.statLabel, isRTL && styles.statLabelAr]}>
                   {t({ en: 'Orders', ar: 'طلب', fr: 'Commandes' })}
                 </Text>
               </View>
               <View style={[styles.statItem, styles.statItemBorder]}>
-                <Text style={[styles.statNumber, isRTL && styles.statNumberAr]}>
-                  {profileStats.favorite}
-                </Text>
+                <Text style={[styles.statNumber, isRTL && styles.statNumberAr]}>{profileStats.favorite}</Text>
                 <Text style={[styles.statLabel, isRTL && styles.statLabelAr]}>
                   {t({ en: 'Favorites', ar: 'مفضل', fr: 'Favoris' })}
                 </Text>
@@ -401,7 +453,7 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
                   {new Date(profileStats.memberSince).toLocaleDateString('en-US', {
                     year: 'numeric',
                     month: 'short',
-                    day: 'numeric'
+                    day: 'numeric',
                   })}
                 </Text>
                 <Text style={[styles.statLabel, isRTL && styles.statLabelAr]}>
@@ -412,14 +464,9 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
           </View>
         )}
 
-        {/* Menu Items - All actions as menu items */}
+        {/* Menu Items */}
         <View style={styles.menuSection}>
-          {/* Reorder */}
-          <TouchableOpacity
-            style={[styles.menuItem, isRTL && styles.menuItemAr]}
-            onPress={handleReorder}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity style={[styles.menuItem, isRTL && styles.menuItemAr]} onPress={handleReorder} activeOpacity={0.7}>
             <View style={[styles.menuItemLeft, isRTL && styles.menuItemLeftAr]}>
               <View style={styles.menuItemIconContainer}>
                 <Ionicons name="repeat-outline" size={20} color="#8B4B16" />
@@ -436,12 +483,7 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
             <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={20} color="#9CA3AF" />
           </TouchableOpacity>
 
-          {/* Coupons */}
-          <TouchableOpacity
-            style={[styles.menuItem, isRTL && styles.menuItemAr]}
-            onPress={handleCoupons}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity style={[styles.menuItem, isRTL && styles.menuItemAr]} onPress={handleCoupons} activeOpacity={0.7}>
             <View style={[styles.menuItemLeft, isRTL && styles.menuItemLeftAr]}>
               <View style={styles.menuItemIconContainer}>
                 <Ionicons name="pricetag-outline" size={20} color="#2563EB" />
@@ -458,12 +500,7 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
             <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={20} color="#9CA3AF" />
           </TouchableOpacity>
 
-          {/* Loyalty Rewards */}
-          <TouchableOpacity
-            style={[styles.menuItem, isRTL && styles.menuItemAr]}
-            onPress={handleLoyaltyRewards}
-            activeOpacity={0.7}
-          >
+          <TouchableOpacity style={[styles.menuItem, isRTL && styles.menuItemAr]} onPress={handleLoyaltyRewards} activeOpacity={0.7}>
             <View style={[styles.menuItemLeft, isRTL && styles.menuItemLeftAr]}>
               <View style={styles.menuItemIconContainer}>
                 <Ionicons name="trophy-outline" size={20} color="#9333EA" />
@@ -480,36 +517,6 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
             <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={20} color="#9CA3AF" />
           </TouchableOpacity>
 
-          {/* Verify Phone (conditional) */}
-          {client && !client.isPhoneVerified && (
-            <TouchableOpacity
-              style={[styles.menuItem, isRTL && styles.menuItemAr]}
-              onPress={sendVerificationCode}
-              disabled={loadingPhone}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.menuItemLeft, isRTL && styles.menuItemLeftAr]}>
-                <View style={styles.menuItemIconContainer}>
-                  {loadingPhone ? (
-                    <ActivityIndicator size="small" color="#059669" />
-                  ) : (
-                    <Ionicons name="shield-checkmark-outline" size={20} color="#059669" />
-                  )}
-                </View>
-                <View style={styles.menuItemTextContainer}>
-                  <Text style={[styles.menuItemLabel, isRTL && styles.menuItemLabelAr]}>
-                    {t({ en: 'Verify Phone', ar: 'تحقق من الهاتف', fr: 'Vérifier le téléphone' })}
-                  </Text>
-                  <Text style={[styles.menuItemSubtitle, isRTL && styles.menuItemSubtitleAr]}>
-                    {t({ en: 'Confirm your phone number', ar: 'تأكيد رقم هاتفك', fr: 'Confirmez votre numéro de téléphone' })}
-                  </Text>
-                </View>
-              </View>
-              <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={20} color="#9CA3AF" />
-            </TouchableOpacity>
-          )}
-
-          {/* Favorite Dishes */}
           <TouchableOpacity
             style={[styles.menuItem, isRTL && styles.menuItemAr]}
             onPress={() => router.push({ pathname: '/favoriteScreen', params: { userLanguage: currentLanguage } })}
@@ -525,28 +532,6 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
                 </Text>
                 <Text style={[styles.menuItemSubtitle, isRTL && styles.menuItemSubtitleAr]}>
                   {t({ en: 'Your saved items', ar: 'العناصر المحفوظة', fr: 'Vos articles sauvegardés' })}
-                </Text>
-              </View>
-            </View>
-            <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={20} color="#9CA3AF" />
-          </TouchableOpacity>
-
-          {/* Help & Support */}
-          <TouchableOpacity
-            style={[styles.menuItem, isRTL && styles.menuItemAr]}
-            onPress={() => router.push({ pathname: '/HelpSupport', params: { userLanguage: currentLanguage } })}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.menuItemLeft, isRTL && styles.menuItemLeftAr]}>
-              <View style={styles.menuItemIconContainer}>
-                <Ionicons name="help-circle-outline" size={20} color="#8B4B16" />
-              </View>
-              <View style={styles.menuItemTextContainer}>
-                <Text style={[styles.menuItemLabel, isRTL && styles.menuItemLabelAr]}>
-                  {t({ en: 'Help & Support', ar: 'المساعدة والدعم', fr: 'Aide et support' })}
-                </Text>
-                <Text style={[styles.menuItemSubtitle, isRTL && styles.menuItemSubtitleAr]}>
-                  {t({ en: 'Get assistance', ar: 'الحصول على المساعدة', fr: 'Obtenir de l\'aide' })}
                 </Text>
               </View>
             </View>
@@ -573,12 +558,8 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
             </View>
             <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={20} color="#9CA3AF" />
           </TouchableOpacity>
-          {/* Language Selector */}
-          <TouchableOpacity
-            style={[styles.menuItem, isRTL && styles.menuItemAr]}
-            onPress={() => setShowLanguageModal(true)}
-            activeOpacity={0.7}
-          >
+
+          <TouchableOpacity style={[styles.menuItem, isRTL && styles.menuItemAr]} onPress={() => setShowLanguageModal(true)} activeOpacity={0.7}>
             <View style={[styles.menuItemLeft, isRTL && styles.menuItemLeftAr]}>
               <View style={styles.menuItemIconContainer}>
                 <Ionicons name="language-outline" size={20} color="#8B4B16" />
@@ -612,10 +593,37 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
           </TouchableOpacity>
         </View>
 
-        {/* Version */}
-        <Text style={[styles.versionText, isRTL && styles.versionTextAr]}>
-          Version 1.0.0
-        </Text>
+        {/* ── Delete Account Button ── */}
+        <View style={styles.deleteSection}>
+          <TouchableOpacity
+            onPress={handleDeleteAccount}
+            style={[styles.deleteButton, isRTL && styles.deleteButtonAr]}
+            activeOpacity={0.7}
+            disabled={isDeletingAccount}
+          >
+            <View style={styles.deleteIconContainer}>
+              {isDeletingAccount ? (
+                <ActivityIndicator size="small" color="#DC2626" />
+              ) : (
+                <Ionicons name="trash-outline" size={20} color="#DC2626" />
+              )}
+            </View>
+            <Text style={[styles.deleteText, isRTL && styles.deleteTextAr]}>
+              {isDeletingAccount
+                ? t({ en: 'Deleting...', ar: 'جارٍ الحذف...', fr: 'Suppression...' })
+                : t({ en: 'Delete Account', ar: 'حذف الحساب', fr: 'Supprimer le compte' })}
+            </Text>
+          </TouchableOpacity>
+          <Text style={[styles.deleteWarning, isRTL && styles.deleteWarningAr]}>
+            {t({
+              en: 'This will permanently delete your account and all associated data.',
+              ar: 'سيؤدي هذا إلى حذف حسابك وجميع بياناتك المرتبطة به بشكل دائم.',
+              fr: 'Cela supprimera définitivement votre compte et toutes les données associées.',
+            })}
+          </Text>
+        </View>
+
+        <Text style={[styles.versionText, isRTL && styles.versionTextAr]}>Version 1.0.0</Text>
       </ScrollView>
 
       {/* Language Selection Modal */}
@@ -626,7 +634,7 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
         onRequestClose={() => setShowLanguageModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { paddingBottom: insets.bottom }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 {t({ en: 'Select Language', ar: 'اختر اللغة', fr: 'Choisir la langue' })}
@@ -642,8 +650,9 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
                   style={[
                     styles.modalOption,
                     ((language === 'English' && currentLanguage === 'english') ||
-                     (language === 'Arabic' && currentLanguage === 'arabic') ||
-                     (language === 'French' && currentLanguage === 'french')) && styles.modalOptionActive,
+                      (language === 'Arabic' && currentLanguage === 'arabic') ||
+                      (language === 'French' && currentLanguage === 'french')) &&
+                      styles.modalOptionActive,
                   ]}
                   onPress={() => updateLanguage(language)}
                 >
@@ -651,8 +660,9 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
                     style={[
                       styles.modalOptionText,
                       ((language === 'English' && currentLanguage === 'english') ||
-                       (language === 'Arabic' && currentLanguage === 'arabic') ||
-                       (language === 'French' && currentLanguage === 'french')) && styles.modalOptionTextActive,
+                        (language === 'Arabic' && currentLanguage === 'arabic') ||
+                        (language === 'French' && currentLanguage === 'french')) &&
+                        styles.modalOptionTextActive,
                     ]}
                   >
                     {language}
@@ -673,7 +683,6 @@ const ProfileScreenComponent: React.FC<ProfileScreenComponentProps> = ({
 };
 
 const styles = StyleSheet.create({
-  // ... (all your existing styles) ...
   container: {
     flex: 1,
     backgroundColor: '#FFFBF7',
@@ -689,9 +698,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     backgroundColor: '#FFFBF7',
   },
-  headerAr: {
-    flexDirection: 'row-reverse',
-  },
+  headerAr: { flexDirection: 'row-reverse' },
   backButton: {
     width: 40,
     height: 40,
@@ -705,12 +712,8 @@ const styles = StyleSheet.create({
     color: Colors.text.primary,
     letterSpacing: -0.3,
   },
-  headerTitleAr: {
-    textAlign: 'right',
-  },
-  headerRightPlaceholder: {
-    width: 40,
-  },
+  headerTitleAr: { textAlign: 'right' },
+  headerRightPlaceholder: { width: 40 },
   profileSection: {
     backgroundColor: '#FFFBF7',
     paddingTop: 8,
@@ -772,17 +775,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     letterSpacing: -0.5,
   },
-  profileNameAr: {
-    textAlign: 'center',
-  },
+  profileNameAr: { textAlign: 'center' },
   profileEmail: {
     fontSize: 14,
     color: Colors.text.secondary,
     fontWeight: '400',
   },
-  profileEmailAr: {
-    textAlign: 'center',
-  },
+  profileEmailAr: { textAlign: 'center' },
   statsCard: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
@@ -812,17 +811,13 @@ const styles = StyleSheet.create({
     color: '#8B4B16',
     marginBottom: 4,
   },
-  statNumberAr: {
-    textAlign: 'center',
-  },
+  statNumberAr: { textAlign: 'center' },
   statLabel: {
     fontSize: 12,
     color: Colors.text.secondary,
     fontWeight: '500',
   },
-  statLabelAr: {
-    textAlign: 'center',
-  },
+  statLabelAr: { textAlign: 'center' },
   menuSection: {
     backgroundColor: '#FFFBF7',
     paddingHorizontal: 16,
@@ -840,17 +835,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
-  menuItemAr: {
-    flexDirection: 'row-reverse',
-  },
+  menuItemAr: { flexDirection: 'row-reverse' },
   menuItemLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
-  menuItemLeftAr: {
-    flexDirection: 'row-reverse',
-  },
+  menuItemLeftAr: { flexDirection: 'row-reverse' },
   menuItemIconContainer: {
     width: 40,
     height: 40,
@@ -859,28 +850,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  menuItemTextContainer: {
-    gap: 2,
-  },
+  menuItemTextContainer: { gap: 2 },
   menuItemLabel: {
     fontSize: 15,
     fontWeight: '600',
     color: Colors.text.primary,
   },
-  menuItemLabelAr: {
-    textAlign: 'right',
-  },
+  menuItemLabelAr: { textAlign: 'right' },
   menuItemSubtitle: {
     fontSize: 13,
     color: Colors.text.secondary,
   },
-  menuItemSubtitleAr: {
-    textAlign: 'right',
-  },
+  menuItemSubtitleAr: { textAlign: 'right' },
   logoutSection: {
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 16,
+    paddingBottom: 8,
   },
   logoutButton: {
     flexDirection: 'row',
@@ -892,9 +877,7 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
     gap: 12,
   },
-  logoutButtonAr: {
-    flexDirection: 'row-reverse',
-  },
+  logoutButtonAr: { flexDirection: 'row-reverse' },
   logoutIconContainer: {
     width: 40,
     height: 40,
@@ -908,9 +891,50 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#EF4444',
   },
-  logoutTextAr: {
-    textAlign: 'right',
+  logoutTextAr: { textAlign: 'right' },
+
+  // ── Delete Account Styles ──────────────────────────────────────────────────
+  deleteSection: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
   },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF1F1',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    gap: 12,
+  },
+  deleteButtonAr: { flexDirection: 'row-reverse' },
+  deleteIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#DC2626',
+  },
+  deleteTextAr: { textAlign: 'right' },
+  deleteWarning: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    marginTop: 8,
+    paddingHorizontal: 8,
+    lineHeight: 18,
+  },
+  deleteWarningAr: { textAlign: 'center' },
+  // ──────────────────────────────────────────────────────────────────────────
+
   versionText: {
     fontSize: 12,
     color: Colors.text.secondary,
@@ -918,10 +942,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 24,
   },
-  versionTextAr: {
-    textAlign: 'center',
-  },
-  // Modal styles
+  versionTextAr: { textAlign: 'center' },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -957,9 +978,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 5,
   },
-  modalOptionActive: {
-    backgroundColor: '#FFEDD5',
-  },
+  modalOptionActive: { backgroundColor: '#FFEDD5' },
   modalOptionText: {
     fontSize: 16,
     color: Colors.text.primary,

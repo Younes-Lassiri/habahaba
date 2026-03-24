@@ -18,6 +18,7 @@ import { RootState, store } from "./redux/store";
 import { TouchableOpacity, View, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Colors from "@/constants/Colors";
+import { LanguageProvider } from "@/app/admin/contexts/LanguageContext";
 
 // ========== NOTIFICATION CONTEXT ==========
 import React, { createContext, useContext } from 'react';
@@ -49,11 +50,10 @@ function NotificationProvider({ children }: { children: React.ReactNode }) {
 function FloatingCart() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { isAuthenticated } = useAuth(); // This will now work
+  const { isAuthenticated } = useAuth();
   const cartItems = useSelector((state: RootState) => state.orders.items);
   const itemCount = cartItems.reduce((total, item) => total + item.quantity, 0);
 
-  // Debug log to check authentication state
   useEffect(() => {
     console.log('FloatingCart - isAuthenticated:', isAuthenticated);
     console.log('FloatingCart - itemCount:', itemCount);
@@ -63,7 +63,7 @@ function FloatingCart() {
     console.log('FloatingCart - not authenticated, returning null');
     return null;
   }
-  
+
   if (itemCount === 0) {
     console.log('FloatingCart - cart empty, returning null');
     return null;
@@ -123,10 +123,12 @@ function CartPersistence() {
   return null;
 }
 
-// Network Monitor
+// Network Monitor - FIXED for iOS
 function NetworkMonitor() {
-  const [prevConnectionState, setPrevConnectionState] = useState<boolean | null>(true);
+  // null = not yet determined, true = connected, false = disconnected
+  const [prevConnectionState, setPrevConnectionState] = useState<boolean | null>(null);
   const [userLanguage, setUserLanguage] = useState<'english' | 'arabic'>('english');
+  const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
     const loadUserLanguage = async () => {
@@ -167,41 +169,23 @@ function NetworkMonitor() {
     };
   };
 
+  // Step 1: Initial fetch to establish baseline — no toast fired here
   useEffect(() => {
     const messages = getNetworkMessages();
-    const unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
-      const connected = state.isConnected && state.isInternetReachable;
-      if (prevConnectionState !== connected) {
-        if (!connected) {
-          Toast.show({
-            type: 'error',
-            text1: messages.noInternet.text1,
-            text2: messages.noInternet.text2,
-            position: 'top',
-            visibilityTime: 4000,
-            autoHide: true,
-            text1Style: { textAlign: userLanguage === 'arabic' ? 'right' : 'left' },
-            text2Style: { textAlign: userLanguage === 'arabic' ? 'right' : 'left' },
-          });
-        } else if (prevConnectionState === false) {
-          Toast.show({
-            type: 'success',
-            text1: messages.connectionRestored.text1,
-            text2: messages.connectionRestored.text2,
-            position: 'top',
-            visibilityTime: 3000,
-            autoHide: true,
-            text1Style: { textAlign: userLanguage === 'arabic' ? 'right' : 'left' },
-            text2Style: { textAlign: userLanguage === 'arabic' ? 'right' : 'left' },
-          });
-        }
-        setPrevConnectionState(connected);
-      }
-    });
 
     NetInfo.fetch().then((state: NetInfoState) => {
-      const connected = state.isConnected && state.isInternetReachable;
-      if (!connected) {
+      const isConnected = state.isConnected ?? false;
+      const isReachable = state.isInternetReachable ?? null;
+
+      // On iOS isInternetReachable can be null even when connected
+      // treat null as connected, only false means truly offline
+      const connected = isConnected && (isReachable !== false);
+
+      setPrevConnectionState(connected);
+      setInitialized(true);
+
+      // Only show offline toast on boot if definitively offline
+      if (!connected && isConnected === false) {
         setTimeout(() => {
           Toast.show({
             type: 'error',
@@ -213,15 +197,67 @@ function NetworkMonitor() {
             text1Style: { textAlign: userLanguage === 'arabic' ? 'right' : 'left' },
             text2Style: { textAlign: userLanguage === 'arabic' ? 'right' : 'left' },
           });
-        }, 1000);
+        }, 1500);
       }
+    });
+  }, []); // runs once on mount
+
+  // Step 2: Subscribe to changes only after initialization
+  useEffect(() => {
+    if (!initialized) return;
+
+    const messages = getNetworkMessages();
+
+    const unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
+      const isConnected = state.isConnected ?? false;
+      const isReachable = state.isInternetReachable ?? null;
+
+      // isConnected false = definitely offline
+      // isReachable false = connected to network but no internet
+      // isReachable null = iOS measuring, treat as connected (optimistic)
+      let connected: boolean;
+      if (isConnected === false) {
+        connected = false;
+      } else if (isReachable === false) {
+        connected = false;
+      } else {
+        connected = true;
+      }
+
+      // Only fire toast on actual state change
+      if (prevConnectionState !== null && prevConnectionState !== connected) {
+        if (!connected) {
+          Toast.show({
+            type: 'error',
+            text1: messages.noInternet.text1,
+            text2: messages.noInternet.text2,
+            position: 'top',
+            visibilityTime: 4000,
+            autoHide: true,
+            text1Style: { textAlign: userLanguage === 'arabic' ? 'right' : 'left' },
+            text2Style: { textAlign: userLanguage === 'arabic' ? 'right' : 'left' },
+          });
+        } else {
+          Toast.show({
+            type: 'success',
+            text1: messages.connectionRestored.text1,
+            text2: messages.connectionRestored.text2,
+            position: 'top',
+            visibilityTime: 3000,
+            autoHide: true,
+            text1Style: { textAlign: userLanguage === 'arabic' ? 'right' : 'left' },
+            text2Style: { textAlign: userLanguage === 'arabic' ? 'right' : 'left' },
+          });
+        }
+      }
+
       setPrevConnectionState(connected);
     });
 
     return () => {
       unsubscribe();
     };
-  }, [prevConnectionState, userLanguage]);
+  }, [initialized, prevConnectionState, userLanguage]);
 
   return null;
 }
@@ -229,7 +265,7 @@ function NetworkMonitor() {
 // Main App Content component that uses auth
 function AppContent() {
   const insets = useSafeAreaInsets();
-  
+
   return (
     <>
       <NetworkMonitor />
@@ -283,10 +319,12 @@ export default function RootLayout() {
           <NotificationProvider>
             <RestaurantStatusProvider>
               <ScrollPositionProvider>
+                <LanguageProvider>
                 <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
                   <AppContent />
                   <StatusBar style="auto" />
                 </ThemeProvider>
+                </LanguageProvider>
               </ScrollPositionProvider>
             </RestaurantStatusProvider>
           </NotificationProvider>

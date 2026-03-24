@@ -1578,19 +1578,15 @@ export const getRevenueTrends = async (req, res) => {
 // ==================== ORDERS MANAGEMENT ====================
 
 export const getAllOrders = async (req, res) => {
-  let connection;
   try {
-    // 1. Removed: 'page' and 'limit' from destructuring, as they are no longer needed.
     const { status, payment_status, search, start_date, end_date } = req.query;
-
-    connection = await pool.getConnection();
 
     let query = `
       SELECT o.*, 
-            c.name as customer_name, c.phone as customer_phone, c.email as customer_email,
-            dm.name as delivery_man_name, dm.phone as delivery_man_phone,
-            dm.current_latitude as delivery_man_lat, dm.current_longitude as delivery_man_lon,
-            o.lat as client_lat, o.lon as client_lon
+             c.name as customer_name, c.phone as customer_phone, c.email as customer_email,
+             dm.name as delivery_man_name, dm.phone as delivery_man_phone,
+             dm.current_latitude as delivery_man_lat, dm.current_longitude as delivery_man_lon,
+             o.lat as client_lat, o.lon as client_lon
       FROM orders o
       LEFT JOIN clients c ON o.user_id = c.id
       LEFT JOIN delivery_men dm ON o.delivery_man_id = dm.id
@@ -1599,7 +1595,6 @@ export const getAllOrders = async (req, res) => {
     const params = [];
     const conditions = [];
 
-    // Condition construction logic remains the same
     if (status) {
       conditions.push("o.status = ?");
       params.push(status);
@@ -1632,22 +1627,16 @@ export const getAllOrders = async (req, res) => {
 
     query += " ORDER BY o.created_at DESC";
 
-    // 2. Removed: Pagination LIMIT ? OFFSET ? logic.
-    // The query is executed with only filter parameters (params).
-    const [orders] = await connection.execute(query, params);
+    // ✅ THE BIG CHANGE: Use pool.execute directly. 
+    // This automatically acquires AND releases the connection.
+    const [orders] = await pool.execute(query, params);
 
-    // 3. Removed: The entire separate COUNT(*) query logic, as it's redundant when fetching all rows.
-
-    return res.status(200).json({
-      orders,
-      // 4. Removed: The entire pagination object from the response.
-    });
+    return res.status(200).json({ orders });
   } catch (error) {
     console.error("❌ Get all orders error:", error.message);
     return res.status(500).json({ message: "Server error" });
-  } finally {
-    if (connection) connection.release();
   }
+  // ✅ No finally block needed!
 };
 
 export const getOrderDetails = async (req, res) => {
@@ -5437,27 +5426,27 @@ export const bulkUpdateOperatingHours = async (req, res) => {
 
 // Check current time and update is_open status
 export const checkAndUpdateIsOpen = async (existingConnection = null) => {
-  let connection = existingConnection;
-  let shouldRelease = false;
   try {
-    if (!connection) {
-      connection = await pool.getConnection();
-      shouldRelease = true;
-    }
     const serverTime = new Date();
-    const moroccoTimeStr = serverTime.toLocaleString("en-US", {timeZone: "Africa/Casablanca"});
+    const moroccoTimeStr = serverTime.toLocaleString("en-US", { timeZone: "Africa/Casablanca" });
     const moroccoTime = new Date(moroccoTimeStr);
-    
+
     const currentDay = moroccoTime.getDay();
     const yesterday = (currentDay + 6) % 7;
-    const [rows] = await connection.execute(`
+
+    const db = existingConnection || pool;
+
+    const [rows] = await db.execute(`
       SELECT day_of_week, is_closed, open_time, close_time
       FROM restaurant_operating_hours
       WHERE day_of_week IN (?, ?)
     `, [currentDay, yesterday]);
+
     const todayHours = rows.find(r => r.day_of_week === currentDay);
     const yesterdayHours = rows.find(r => r.day_of_week === yesterday);
+
     let shouldBeOpen = false;
+
     const getShiftDate = (refDate, timeStr, dayOffset = 0) => {
       const d = new Date(refDate);
       d.setDate(d.getDate() + dayOffset);
@@ -5465,6 +5454,7 @@ export const checkAndUpdateIsOpen = async (existingConnection = null) => {
       d.setHours(parseInt(h), parseInt(m), parseInt(s || 0), 0);
       return d;
     };
+
     if (todayHours && !todayHours.is_closed) {
       const openToday = getShiftDate(moroccoTime, todayHours.open_time);
       let closeToday = getShiftDate(moroccoTime, todayHours.close_time);
@@ -5473,6 +5463,7 @@ export const checkAndUpdateIsOpen = async (existingConnection = null) => {
         shouldBeOpen = true;
       }
     }
+
     if (!shouldBeOpen && yesterdayHours && !yesterdayHours.is_closed) {
       const openYesterday = getShiftDate(moroccoTime, yesterdayHours.open_time, -1);
       let closeYesterday = getShiftDate(moroccoTime, yesterdayHours.close_time, -1);
@@ -5483,16 +5474,16 @@ export const checkAndUpdateIsOpen = async (existingConnection = null) => {
         }
       }
     }
-    await connection.execute(
+
+    await db.execute(
       `UPDATE restaurant_settings SET is_open = ? WHERE id = (SELECT id FROM (SELECT id FROM restaurant_settings LIMIT 1) as t)`,
       [shouldBeOpen ? 1 : 0]
     );
+
     return shouldBeOpen;
   } catch (error) {
     console.error('Error checking/updating is_open:', error);
     return null;
-  } finally {
-    if (shouldRelease && connection) connection.release(); // ← only releases if WE created it
   }
 };
 
@@ -5618,6 +5609,46 @@ export const toggleRestaurantOpen = async (req, res) => {
     console.error('Error toggling restaurant open status:', error);
     res.status(500).json({ message: 'Server error' });
   }finally {
+    if (connection) connection.release();
+  }
+};
+
+
+
+// set admin panel language
+export const changePanelLanguage = async (req, res) => {
+  let connection;
+  try {
+    const { language } = req.body;
+    const adminId = req.admin.id; // Extracted by your verifyAdminToken middleware
+
+    // Simple validation
+    if (!language) {
+      return res.status(400).json({ message: "Language is required" });
+    }
+
+    connection = await pool.getConnection();
+
+    // Update the language column in the admins table
+    const [result] = await connection.execute(
+      `UPDATE admins SET language = ? WHERE id = ?`,
+      [language, adminId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Admin not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Language updated successfully",
+      language: language
+    });
+
+  } catch (error) {
+    console.error("❌ Change panel language error:", error.message);
+    return res.status(500).json({ message: "Server error while updating language" });
+  } finally {
     if (connection) connection.release();
   }
 };

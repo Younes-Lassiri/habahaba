@@ -3,8 +3,23 @@ config:
   phases:
     - duration: 30
       arrivalRate: 50
+  processor: "./order-processor.js"
+  defaults:
+    headers:
+      Content-Type: "application/json"
 
 scenarios:
   - flow:
-      - get:
-          url: "/api/auth/home-page-data"
+      - function: "generateAndSetPayload"
+      - post:
+          url: "/api/auth/place-order"
+          json:a
+            user_id: 49
+            items: "{{ items }}"
+            delivery_address: "123 Test Street, Casablanca, Morocco"
+            total_price: "{{ totalPrice }}"
+            delivery_fee: 15
+            discount: 0
+            final_price: "{{ finalPrice }}"
+            paymentMethod: "cash"
+            promoCode: null

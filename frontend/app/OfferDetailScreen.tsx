@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -52,6 +53,13 @@ interface Offer {
   is_applied_by_user?: boolean;
 }
 
+const roundPrice = (amount: number): number => {
+  const decimal = amount % 1;
+  if (decimal === 0) return amount;
+  const base = Math.floor(amount);
+  return decimal <= 0.5 ? base + 0.5 : base + 1;
+};
+
 export default function OfferDetailScreen() {
   const router = useRouter();
   const { offerId } = useLocalSearchParams();
@@ -71,7 +79,6 @@ export default function OfferDetailScreen() {
   const dispatch = useDispatch<AppDispatch>();
   const insets = useSafeAreaInsets();
 
-  // Load language from AsyncStorage
   useEffect(() => {
     const loadLanguage = async () => {
       try {
@@ -86,7 +93,6 @@ export default function OfferDetailScreen() {
     loadLanguage();
   }, []);
 
-  // Translation helper
   const t = (en: string, ar: string, fr: string) => {
     if (userLanguage === 'arabic') return ar;
     if (userLanguage === 'french') return fr;
@@ -201,13 +207,13 @@ export default function OfferDetailScreen() {
   };
 
   const getDiscountedPrice = (product: Product): number => {
-    if (!offer) return product.product_price;
+    if (!offer) return roundPrice(product.product_price);
     if (offer.discount_type === 'percentage') {
-      return product.product_price - (product.product_price * offer.discount) / 100;
+      return roundPrice(product.product_price - (product.product_price * offer.discount) / 100);
     } else if (offer.discount_type === 'fixed') {
-      return Math.max(0, product.product_price - offer.discount);
+      return roundPrice(Math.max(0, product.product_price - offer.discount));
     }
-    return product.product_price;
+    return roundPrice(product.product_price);
   };
 
   const handleApplyOffer = async () => {
@@ -332,7 +338,7 @@ export default function OfferDetailScreen() {
 
       const discountedPrice = getDiscountedPrice(product);
       const imageUrl = product.product_image
-        ? `https://haba-haba-api.ubua.cloud/${product.product_image.replace(/\\/g, '/')}`
+        ? `https://haba-haba-api.ubua.cloud/${product.product_image?.replace(/\\/g, '/')}`
         : '';
 
       const orderItem = {
@@ -346,13 +352,13 @@ export default function OfferDetailScreen() {
         specialInstructions: '',
         showSpecialInstructions: false,
         discount_applied: true,
-        original_price: product.product_price,
+        original_price: roundPrice(product.product_price),
         offer_info: offer ? {
           offer_id: offer.id,
           offer_name: offer.name,
           discount_type: offer.discount_type === 'percentage' || offer.discount_type === 'fixed' ? offer.discount_type : 'percentage',
           discount_value: offer.discount,
-          original_price: product.product_price,
+          original_price: roundPrice(product.product_price),
           can_use_offer: true,
           times_used: 0,
           max_uses: product.remaining_uses ?? null,
@@ -416,6 +422,20 @@ export default function OfferDetailScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* ✅ This fills the status bar area on iOS with your primary color */}
+              {Platform.OS === 'ios' && (
+                <View
+                  style={{
+                    height: insets.top,
+                    backgroundColor: Colors.primary,
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    zIndex: 999,
+                  }}
+                />
+              )}
       {/* Header */}
       <View style={[styles.header, isRTL && styles.headerRTL]}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
@@ -434,7 +454,7 @@ export default function OfferDetailScreen() {
         {/* Hero Image */}
         <View style={styles.heroContainer}>
           <Image
-            source={{ uri: offer.image.startsWith('http') ? offer.image : `https://haba-haba-api.ubua.cloud/${offer.image.replace(/\\/g, '/')}` }}
+            source={{ uri: offer.image?.startsWith('http') ? offer.image : `https://haba-haba-api.ubua.cloud/${offer.image?.replace(/\\/g, '/')}` }}
             style={styles.heroImage}
           />
           <LinearGradient
@@ -547,7 +567,7 @@ export default function OfferDetailScreen() {
                 <View key={product.product_id} style={styles.productCard}>
                   <View style={styles.productImageContainer}>
                     <Image
-                      source={{ uri: product.product_image.startsWith('http') ? product.product_image : `https://haba-haba-api.ubua.cloud/${product.product_image.replace(/\\/g, '/')}` }}
+                      source={{ uri: product.product_image?.startsWith('http') ? product.product_image : `https://haba-haba-api.ubua.cloud/${product.product_image?.replace(/\\/g, '/')}` }}
                       style={styles.productImage}
                     />
                     {product.has_applied_offer && (
@@ -579,9 +599,9 @@ export default function OfferDetailScreen() {
                     <View style={[styles.productFooter, isRTL && styles.productFooterRTL]}>
                       <View>
                         {offer.discount_type !== 'free_delivery' && (
-                          <Text style={styles.originalPrice}>{product.product_price} MAD</Text>
+                          <Text style={styles.originalPrice}>{roundPrice(product.product_price)} MAD</Text>
                         )}
-                        <Text style={styles.discountedPrice}>{discountedPrice.toFixed(2)} MAD</Text>
+                        <Text style={styles.discountedPrice}>{discountedPrice} MAD</Text>
                         <Text style={styles.productCategory}>{product.product_category}</Text>
                       </View>
 
@@ -663,7 +683,7 @@ export default function OfferDetailScreen() {
       </ScrollView>
 
       {/* Fixed Apply Button */}
-      <View style={styles.fixedButtonContainer}>
+      <View style={[styles.fixedButtonContainer, { paddingBottom: insets.bottom + 16 }]}>
         <TouchableOpacity
           style={[styles.applyButton, (timeLeft.isExpired || isOfferApplied) && styles.applyButtonDisabled]}
           onPress={isOfferApplied ? undefined : handleApplyOffer}

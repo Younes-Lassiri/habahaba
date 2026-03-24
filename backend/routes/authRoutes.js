@@ -1,11 +1,12 @@
 import express from "express";
-import { register, verifyEmail, login, forgotPassword, resetPassword, getCategories, getProducts, deliveryManLogin, loginWithPhone, sendVerificationCode, verifyPhoneCode, getAllProductsWithOffers, getRestaurantSettingsPublic, getHomePageData, loginWithGoogle, getRestaurantOpenStatus, setClientLanguage, getInCartProducts, checkLiveStatus, getProductNames, getProfileStats } from "../controllers/authController.js";
+import { register, verifyEmail, login, forgotPassword, resetPassword, getCategories, getProducts, deliveryManLogin, loginWithPhone, sendVerificationCode, verifyPhoneCode, getAllProductsWithOffers, getRestaurantSettingsPublic, loginWithGoogle, getRestaurantOpenStatus, setClientLanguage, getInCartProducts, checkLiveStatus, getProductNames, getProfileStats, getHomePageData } from "../controllers/authController.js";
 import { verifyToken } from "../middleware/authMiddleware.js";
 import { redirectIfAuthenticated } from "../middleware/redirectIfAuthenticated.js";
 import { createOrder, getOrders, getDeliveryManLocation, checkOrderExists, getLoyaltyRewards, submitOrderRating, estimateDeliveryFee } from "../controllers/orderController.js";
 import { addFavorite, getFavorites, removeFavorite } from "../controllers/favoriteController.js";
-import { updateProfile, uploadProfileImage } from "../controllers/updateProfileController.js";
+import { deleteAccount, updateProfile, uploadProfileImage } from "../controllers/updateProfileController.js";
 import { applyOfferToAllProducts, getAllOffers, getPromoCodes, validatePromoCode } from "../controllers/promoController.js";
+import pool from "../config/db.js";
 const router = express.Router();
 
 // Signup route
@@ -22,7 +23,7 @@ router.get("/get-categories", getCategories);
 
 router.get("/get-products", getProducts);
 router.get('/products-names', getProductNames);
-router.get("/home-page-data", a);
+router.get("/home-page-data", getHomePageData);
 router.get("/get-products-with-offers", getAllProductsWithOffers);
 router.get("/estimate-delivery-fee", estimateDeliveryFee);
 
@@ -80,5 +81,31 @@ router.get("/in-cart-products", getInCartProducts);
 router.post('/products/check-live-status', checkLiveStatus);
 
 router.get('/profile-stats',verifyToken, getProfileStats);
+
+
+router.get('/health', async (req, res) => {
+  try {
+    const start = Date.now();
+
+    await pool.execute('SELECT 1');
+
+    const duration = Date.now() - start;
+
+    res.json({
+      status: 'OK',
+      db: 'connected',
+      response_time_ms: duration
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      status: 'FAIL',
+      error: err.message
+    });
+  }
+});
+
+
+router.delete('/delete-account',verifyToken, deleteAccount);
 
 export default router;

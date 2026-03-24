@@ -229,7 +229,21 @@ const PrivacyPolicy: React.FC = () => {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top }]}>
+    <SafeAreaView style={[styles.safeArea, { paddingTop: insets.top + 20 }]}>
+      {/* ✅ This fills the status bar area on iOS with your primary color */}
+              {Platform.OS === 'ios' && (
+                <View
+                  style={{
+                    height: insets.top,
+                    backgroundColor: Colors.primary,
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    zIndex: 999,
+                  }}
+                />
+              )}
       {/* Top right language icon */}
       <View style={[styles.topRightButtons, { top: Platform.OS === 'ios' ? 54 : 50 }]}>
         <TouchableOpacity
@@ -360,8 +374,8 @@ const PrivacyPolicy: React.FC = () => {
         animationType="slide"
         onRequestClose={() => setShowLanguageModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <View style={[styles.modalOverlay]}>
+          <View style={[styles.modalContent, { paddingBottom: insets.bottom + 20 }]}>
             <View style={[styles.modalHeader, isRTL && styles.modalHeaderRTL]}>
               {isRTL ? (
                 <>

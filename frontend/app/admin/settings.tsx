@@ -17,8 +17,11 @@ import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useLanguage, Language  } from './contexts/LanguageContext'; // adjust path if needed
 
 const API_URL = 'https://haba-haba-api.ubua.cloud/api/admin';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface RestaurantSettings {
     restaurant_name: string;
@@ -54,11 +57,15 @@ interface OpenStatus {
     } | null;
 }
 
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export default function AdminSettings() {
     const router = useRouter();
+    const insets = useSafeAreaInsets();
+
+    // ── existing state ──────────────────────────────────────────────────────
     const [token, setToken] = useState<string | null>(null);
     const [userEmail, setUserEmail] = useState<string | null>(null);
-    const insets = useSafeAreaInsets();
     const [loading, setLoading] = useState(true);
     const [settings, setSettings] = useState<RestaurantSettings | null>(null);
     const [operatingHours, setOperatingHours] = useState<OperatingHour[]>([]);
@@ -69,6 +76,33 @@ export default function AdminSettings() {
     const [editCloseTime, setEditCloseTime] = useState('');
     const [editIsClosed, setEditIsClosed] = useState(false);
     const [savingHours, setSavingHours] = useState(false);
+
+    // ── language (from context) ─────────────────────────────────────────────
+    const { language, t, isRTL, setLanguage: setContextLanguage } = useLanguage();
+    const T = t.settings;
+    const TC = t.common;
+    const [showLanguageModal, setShowLanguageModal] = useState(false);
+    const [savingLanguage, setSavingLanguage] = useState(false);
+
+    // Arabic day name map
+    const arabicDayNames: Record<string, string> = {
+        Monday: 'الاثنين',
+        Tuesday: 'الثلاثاء',
+        Wednesday: 'الأربعاء',
+        Thursday: 'الخميس',
+        Friday: 'الجمعة',
+        Saturday: 'السبت',
+        Sunday: 'الأحد',
+    };
+    const getDayName = (name: string) => isRTL ? (arabicDayNames[name] ?? name) : name;
+
+    // ── RTL helper — returns row direction style ────────────────────────────
+    const rtlRow = isRTL ? { flexDirection: 'row-reverse' as const } : {};
+    // Swaps marginLeft for marginRight in RTL
+    const rtlMargin = (ltrMarginLeft: number) =>
+        isRTL
+            ? { marginRight: ltrMarginLeft, marginLeft: 0 }
+            : { marginLeft: ltrMarginLeft };
 
     useEffect(() => {
         loadAdminData();
@@ -82,9 +116,36 @@ export default function AdminSettings() {
         }
     }, [token]);
 
+    // ── language selector handler ───────────────────────────────────────────
+    const handleSelectLanguage = async (lang: Language) => {
+        setSavingLanguage(true);
+        try {
+            await setContextLanguage(lang);
+
+            if (token) {
+                axios
+                    .post(
+                        `${API_URL}/set-language`,
+                        { language: lang },
+                        { headers: { Authorization: `Bearer ${token}` } }
+                    )
+                    .catch((err) =>
+                        console.warn('Backend language sync failed:', err?.message)
+                    );
+            }
+
+            setShowLanguageModal(false);
+        } catch (error) {
+            console.error('Error saving language:', error);
+        } finally {
+            setSavingLanguage(false);
+        }
+    };
+
+    // ── existing handlers ───────────────────────────────────────────────────
+
     const loadAdminData = async () => {
         try {
-            // Get token and admin data separately (as you're storing them)
             const token = await AsyncStorage.getItem('adminToken');
             const adminDataString = await AsyncStorage.getItem('adminData');
 
@@ -94,18 +155,14 @@ export default function AdminSettings() {
                 if (adminDataString) {
                     try {
                         const adminData = JSON.parse(adminDataString);
-                        // Get email from the correct location
                         setUserEmail(adminData.email || 'admin@restaurant.com');
                     } catch (parseError) {
                         console.error('Error parsing admin data:', parseError);
                         setUserEmail('admin@restaurant.com');
                     }
                 } else {
-                    console.log('⚠️ No admin data found');
                     setUserEmail('admin@restaurant.com');
                 }
-            } else {
-                console.log('❌ No admin token found');
             }
         } catch (error) {
             console.error('❌ Error loading admin data:', error);
@@ -120,7 +177,6 @@ export default function AdminSettings() {
                 headers: { Authorization: `Bearer ${token}` },
             });
             setSettings(response.data.settings || response.data);
-            console.log('✅ Fetched restaurant settings', response.data.settings);
         } catch (error) {
             console.error('Error fetching settings:', error);
         }
@@ -128,31 +184,25 @@ export default function AdminSettings() {
 
     const fetchOperatingHours = async () => {
         try {
-            console.log('📅 Fetching operating hours...');
             const response = await axios.get(`${API_URL}/operating-hours`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
-            console.log('📅 Operating hours response:', response.data);
             if (response.data.success) {
                 setOperatingHours(response.data.operatingHours);
-                console.log('✅ Fetched operating hours', response.data.operatingHours);
             }
         } catch (error: any) {
             console.error('❌ Error fetching operating hours:', error?.response?.data || error.message);
-            Alert.alert('Error', 'Failed to load operating hours. Please restart the backend server.');
+            Alert.alert(TC.error, T.loadFailed);
         }
     };
 
     const fetchOpenStatus = async () => {
         try {
-            console.log('🕐 Fetching open status...');
             const response = await axios.get(`${API_URL}/open-status`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
-            console.log('🕐 Open status response:', response.data);
             if (response.data.success) {
                 setOpenStatus(response.data);
-                console.log('✅ Fetched open status', response.data);
             }
         } catch (error: any) {
             console.error('❌ Error fetching open status:', error?.response?.data || error.message);
@@ -170,60 +220,29 @@ export default function AdminSettings() {
     const incrementTime = (timeType: 'open' | 'close') => {
         const currentTime = timeType === 'open' ? editOpenTime : editCloseTime;
         const [hours, minutes] = currentTime.split(':').map(Number);
-        
         let newHours = hours;
-        let newMinutes = minutes;
-        
-        // Increment by 30 minutes
-        newMinutes += 30;
-        if (newMinutes >= 60) {
-            newMinutes -= 60;
-            newHours += 1;
-        }
-        
-        // Handle day overflow
-        if (newHours >= 24) {
-            newHours = 0;
-        }
-        
+        let newMinutes = minutes + 30;
+        if (newMinutes >= 60) { newMinutes -= 60; newHours += 1; }
+        if (newHours >= 24) { newHours = 0; }
         const newTime = `${String(newHours).padStart(2, '0')}:${String(newMinutes).padStart(2, '0')}`;
-        if (timeType === 'open') {
-            setEditOpenTime(newTime);
-        } else {
-            setEditCloseTime(newTime);
-        }
+        if (timeType === 'open') setEditOpenTime(newTime);
+        else setEditCloseTime(newTime);
     };
-    
+
     const decrementTime = (timeType: 'open' | 'close') => {
         const currentTime = timeType === 'open' ? editOpenTime : editCloseTime;
         const [hours, minutes] = currentTime.split(':').map(Number);
-        
         let newHours = hours;
-        let newMinutes = minutes;
-        
-        // Decrement by 30 minutes
-        newMinutes -= 30;
-        if (newMinutes < 0) {
-            newMinutes += 60;
-            newHours -= 1;
-        }
-        
-        // Handle day underflow
-        if (newHours < 0) {
-            newHours = 23;
-        }
-        
+        let newMinutes = minutes - 30;
+        if (newMinutes < 0) { newMinutes += 60; newHours -= 1; }
+        if (newHours < 0) { newHours = 23; }
         const newTime = `${String(newHours).padStart(2, '0')}:${String(newMinutes).padStart(2, '0')}`;
-        if (timeType === 'open') {
-            setEditOpenTime(newTime);
-        } else {
-            setEditCloseTime(newTime);
-        }
+        if (timeType === 'open') setEditOpenTime(newTime);
+        else setEditCloseTime(newTime);
     };
 
     const saveOperatingHours = async () => {
         if (!editingDay) return;
-
         setSavingHours(true);
         try {
             await axios.put(
@@ -236,15 +255,14 @@ export default function AdminSettings() {
                 },
                 { headers: { Authorization: `Bearer ${token}` } }
             );
-
-            Alert.alert('Success', `${editingDay.day_name} hours updated successfully`);
+            Alert.alert(TC.success, `${editingDay.day_name} ${T.saveSuccess}`);
             setShowHoursModal(false);
             fetchOperatingHours();
             fetchOpenStatus();
-            fetchSettings(); // Refresh is_open status
+            fetchSettings();
         } catch (error) {
             console.error('Error saving operating hours:', error);
-            Alert.alert('Error', 'Failed to save operating hours');
+            Alert.alert(TC.error, T.saveFailed);
         } finally {
             setSavingHours(false);
         }
@@ -261,53 +279,45 @@ export default function AdminSettings() {
 
     const toggleRestaurantStatus = async () => {
         if (!settings || !token) {
-            Alert.alert('Error', 'Please wait for settings to load');
+            Alert.alert(TC.error, T.settingsLoadError);
             return;
         }
-
         try {
             const newStatus = !settings.is_open;
-            const response = await axios.put(
+            await axios.put(
                 `${API_URL}/restaurant-settings`,
                 { is_open: newStatus },
                 { headers: { Authorization: `Bearer ${token}` } }
             );
-
-            // Update local state with response data
-            setSettings((prev: RestaurantSettings | null) => prev ? { ...prev, is_open: newStatus } : null);
-
-            Alert.alert(
-                'Success',
-                `Restaurant is now ${newStatus ? 'OPEN' : 'CLOSED'} for business`
+            setSettings((prev: RestaurantSettings | null) =>
+                prev ? { ...prev, is_open: newStatus } : null
             );
+            Alert.alert(TC.success, T.restaurantNowOpen(newStatus));
         } catch (error: any) {
             console.error('Error toggling restaurant status:', error);
-
             if (error.response?.status === 401) {
-                Alert.alert('Session Expired', 'Please login again');
+                Alert.alert(TC.sessionExpired, TC.sessionExpiredMessage);
                 await AsyncStorage.removeItem('adminToken');
             } else {
-                Alert.alert('Error', error.response?.data?.message || 'Failed to update restaurant status');
+                Alert.alert(TC.error, error.response?.data?.message || 'Failed to update restaurant status');
             }
         }
     };
 
     const handleLogout = async () => {
         Alert.alert(
-            'Logout',
-            'Are you sure you want to logout?',
+            T.logoutTitle,
+            T.logoutMessage,
             [
-                { text: 'Cancel', style: 'cancel' },
+                { text: TC.cancel, style: 'cancel' },
                 {
-                    text: 'Logout',
+                    text: TC.logout,
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            // Remove both storage items
                             await AsyncStorage.removeItem('adminToken');
                             await AsyncStorage.removeItem('adminData');
                             setToken(null);
-                            // Navigate to signin
                             router.replace('/signin');
                         } catch (error) {
                             console.error('Logout error:', error);
@@ -318,44 +328,54 @@ export default function AdminSettings() {
         );
     };
 
+    // ── loading screen ──────────────────────────────────────────────────────
+
     if (loading) {
         return (
             <View style={styles.container}>
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color="#2196F3" />
-                    <Text style={styles.loadingText}>Loading settings...</Text>
+                    <Text style={styles.loadingText}>{T.loading}</Text>
                 </View>
             </View>
         );
     }
 
+    // ── render ──────────────────────────────────────────────────────────────
+
     return (
-        <View style={[styles.container]}>
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>Settings</Text>
-                <Text style={styles.headerSubtitle}>Restaurant configuration</Text>
+        <View style={styles.container}>
+            {/* ── Header ── */}
+            <View style={[styles.header, rtlRow]}>
+                <View style={{ flex: 1 }}>
+                    <Text style={[styles.headerTitle, isRTL && styles.rtlText]}>{T.title}</Text>
+                    <Text style={[styles.headerSubtitle, isRTL && styles.rtlText]}>{T.subtitle}</Text>
+                </View>
             </View>
 
             <ScrollView style={styles.content}>
-                {/* Restaurant Status */}
+
+                {/* ── Restaurant Status ── */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Restaurant Status</Text>
+                    <Text style={[styles.sectionTitle, isRTL && styles.rtlText]}>{T.restaurantStatus}</Text>
                     <View style={styles.card}>
-                        <View style={styles.settingRow}>
-                            <View style={styles.settingLeft}>
+                        <View style={[styles.settingRow, rtlRow]}>
+                            <View style={[styles.settingLeft, rtlRow]}>
                                 <Ionicons
                                     name={settings?.is_open ? 'checkmark-circle' : 'close-circle'}
                                     size={24}
                                     color={settings?.is_open ? '#4CAF50' : '#F44336'}
                                 />
-                                <View style={styles.settingText}>
-                                    <Text style={styles.settingTitle}>
-                                        {settings ? (settings.is_open ? 'Open for Business' : 'Closed') : 'Loading...'}
+                                <View style={[styles.settingText, rtlMargin(12)]}>
+                                    <Text style={[styles.settingTitle, isRTL && styles.rtlText]}>
+                                        {settings
+                                            ? (settings.is_open ? T.openForBusiness : T.closedStatus)
+                                            : TC.loading}
                                     </Text>
-                                    <Text style={styles.settingDescription}>
-                                        {settings ?
-                                            (settings.is_open ? 'Customers can place orders' : 'Customers cannot place orders')
-                                            : 'Loading restaurant status...'}
+                                    <Text style={[styles.settingDescription, isRTL && styles.rtlText]}>
+                                        {settings
+                                            ? (settings.is_open ? T.customersCanOrder : T.customersCannotOrder)
+                                            : T.loadingStatus}
                                     </Text>
                                 </View>
                             </View>
@@ -364,40 +384,46 @@ export default function AdminSettings() {
                                 onValueChange={toggleRestaurantStatus}
                                 trackColor={{ false: '#E0E0E0', true: '#81C784' }}
                                 thumbColor="#FFFFFF"
-                                disabled={!settings} // Disable until settings load
+                                disabled={!settings}
                             />
                         </View>
                     </View>
                 </View>
 
-                {/* Operating Hours */}
+                {/* ── Operating Hours ── */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Operating Hours</Text>
+                    <Text style={[styles.sectionTitle, isRTL && styles.rtlText]}>{T.operatingHours}</Text>
+
                     {openStatus && (
                         <View style={[styles.card, { marginBottom: 12 }]}>
-                            <View style={styles.currentStatusRow}>
-                                <View style={[styles.statusIndicator, { backgroundColor: openStatus.is_open ? '#4CAF50' : '#F44336' }]} />
+                            <View style={[styles.currentStatusRow, rtlRow]}>
+                                <View style={[
+                                    styles.statusIndicator,
+                                    { backgroundColor: openStatus.is_open ? '#4CAF50' : '#F44336' },
+                                    isRTL ? { marginLeft: 12, marginRight: 0 } : { marginRight: 12 },
+                                ]} />
                                 <View style={styles.statusTextContainer}>
-                                    <Text style={styles.currentStatusText}>
-                                        Currently {openStatus.is_open ? 'OPEN' : 'CLOSED'}
+                                    <Text style={[styles.currentStatusText, isRTL && styles.rtlText]}>
+                                        {openStatus.is_open ? T.currentlyOpen : T.currentlyClosed}
                                     </Text>
-                                    <Text style={styles.currentTimeText}>
+                                    <Text style={[styles.currentTimeText, isRTL && styles.rtlText]}>
                                         {openStatus.current_day} • {openStatus.current_time}
                                     </Text>
                                     {!openStatus.is_open && openStatus.next_open && (
-                                        <Text style={styles.nextOpenText}>
-                                            Opens {openStatus.next_open.day_name} at {formatTime(openStatus.next_open.time)}
+                                        <Text style={[styles.nextOpenText, isRTL && styles.rtlText]}>
+                                            {T.opens} {openStatus.next_open.day_name} {T.at} {formatTime(openStatus.next_open.time)}
                                         </Text>
                                     )}
                                 </View>
                             </View>
                         </View>
                     )}
+
                     <View style={styles.card}>
                         {operatingHours.length === 0 ? (
                             <View style={styles.loadingHoursContainer}>
                                 <ActivityIndicator size="small" color="#2196F3" />
-                                <Text style={styles.loadingHoursText}>Loading operating hours...</Text>
+                                <Text style={styles.loadingHoursText}>{T.loadingHours}</Text>
                             </View>
                         ) : (
                             operatingHours.map((hour, index) => (
@@ -405,74 +431,81 @@ export default function AdminSettings() {
                                     key={hour.day_of_week}
                                     style={[
                                         styles.hourRow,
-                                        index < operatingHours.length - 1 && styles.hourRowBorder
+                                        index < operatingHours.length - 1 && styles.hourRowBorder,
+                                        rtlRow,
                                     ]}
                                     onPress={() => openEditModal(hour)}
                                 >
-                                    <View style={styles.dayInfo}>
+                                    {/* Day name + today badge */}
+                                    <View style={[styles.dayInfo, rtlRow]}>
                                         <Text style={[styles.dayName, hour.is_closed && styles.closedDay]}>
-                                            {hour.day_name}
+                                            {getDayName(hour.day_name)}
                                         </Text>
                                         {openStatus?.current_day === hour.day_name && (
                                             <View style={styles.todayBadge}>
-                                                <Text style={styles.todayBadgeText}>Today</Text>
+                                                <Text style={styles.todayBadgeText}>{T.days.today}</Text>
                                             </View>
                                         )}
                                     </View>
-                                    <View style={styles.hoursInfo}>
+
+                                    {/* Hours + chevron — chevron mirrors in RTL */}
+                                    <View style={[styles.hoursInfo, rtlRow]}>
                                         {hour.is_closed ? (
-                                            <Text style={styles.closedText}>Closed</Text>
+                                            <Text style={styles.closedText}>{T.days.closed}</Text>
                                         ) : (
                                             <Text style={styles.hoursText}>
                                                 {formatTime(hour.open_time)} - {formatTime(hour.close_time)}
                                             </Text>
                                         )}
-                                        <Ionicons name="chevron-forward" size={20} color="#999" />
+                                        <Ionicons
+                                            name={isRTL ? 'chevron-back' : 'chevron-forward'}
+                                            size={20}
+                                            color="#999"
+                                        />
                                     </View>
                                 </TouchableOpacity>
                             ))
                         )}
                     </View>
-                    <Text style={styles.hoursNote}>
-                        Restaurant status updates automatically based on these hours
-                    </Text>
+                    <Text style={[styles.hoursNote, isRTL && styles.rtlText]}>{T.hoursNote}</Text>
                 </View>
 
-                {/* Restaurant Info */}
+                {/* ── Restaurant Info ── */}
                 {settings && (
                     <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Restaurant Information</Text>
+                        <Text style={[styles.sectionTitle, isRTL && styles.rtlText]}>{T.restaurantInfo}</Text>
                         <View style={styles.card}>
-                            <View style={styles.infoRow}>
+                            {/* Name */}
+                            <View style={[styles.infoRow, rtlRow]}>
                                 <Ionicons name="restaurant-outline" size={20} color="#666" />
-                                <View style={styles.infoText}>
-                                    <Text style={styles.infoLabel}>Name</Text>
-                                    <Text style={styles.infoValue}>{settings.restaurant_name}</Text>
+                                <View style={[styles.infoText, rtlMargin(12)]}>
+                                    <Text style={[styles.infoLabel, isRTL && styles.rtlText]}>{T.name}</Text>
+                                    <Text style={[styles.infoValue, isRTL && styles.rtlText]}>{settings.restaurant_name}</Text>
                                 </View>
                             </View>
-
-                            <View style={styles.infoRow}>
+                            {/* Phone */}
+                            <View style={[styles.infoRow, rtlRow]}>
                                 <Ionicons name="call-outline" size={20} color="#666" />
-                                <View style={styles.infoText}>
-                                    <Text style={styles.infoLabel}>Phone</Text>
-                                    <Text style={styles.infoValue}>{settings.phone}</Text>
+                                <View style={[styles.infoText, rtlMargin(12)]}>
+                                    <Text style={[styles.infoLabel, isRTL && styles.rtlText]}>{T.phone}</Text>
+                                    <Text style={[styles.infoValue, isRTL && styles.rtlText]}>{settings.phone}</Text>
                                 </View>
                             </View>
-
-                            <View style={styles.infoRow}>
+                            {/* Email */}
+                            <View style={[styles.infoRow, rtlRow]}>
                                 <Ionicons name="mail-outline" size={20} color="#666" />
-                                <View style={styles.infoText}>
-                                    <Text style={styles.infoLabel}>Email</Text>
-                                    <Text style={styles.infoValue}>{settings.restaurant_email}</Text>
+                                <View style={[styles.infoText, rtlMargin(12)]}>
+                                    <Text style={[styles.infoLabel, isRTL && styles.rtlText]}>{T.email}</Text>
+                                    <Text style={[styles.infoValue, isRTL && styles.rtlText]}>{settings.restaurant_email}</Text>
                                 </View>
                             </View>
-
+                            {/* Delivery fee */}
                             {settings.delivery_fee !== undefined && (
-                                <View style={styles.infoRow}>
+                                <View style={[styles.infoRow, rtlRow]}>
                                     <Ionicons name="bicycle-outline" size={20} color="#666" />
-                                    <View style={styles.infoText}>
-                                        <Text style={styles.infoLabel}>Delivery Fee</Text>
-                                        <Text style={styles.infoValue}>
+                                    <View style={[styles.infoText, rtlMargin(12)]}>
+                                        <Text style={[styles.infoLabel, isRTL && styles.rtlText]}>{T.deliveryFee}</Text>
+                                        <Text style={[styles.infoValue, isRTL && styles.rtlText]}>
                                             {settings.delivery_fee.toFixed(2)} MAD
                                         </Text>
                                     </View>
@@ -482,35 +515,66 @@ export default function AdminSettings() {
                     </View>
                 )}
 
-                {/* Account Info */}
+                {/* ── Account ── */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Account</Text>
+                    <Text style={[styles.sectionTitle, isRTL && styles.rtlText]}>{T.account}</Text>
                     <View style={styles.card}>
-                        <View style={styles.infoRow}>
+                        <View style={[styles.infoRow, rtlRow]}>
                             <Ionicons name="person-outline" size={20} color="#666" />
-                            <View style={styles.infoText}>
-                                <Text style={styles.infoLabel}>Admin Email</Text>
-                                <Text style={styles.infoValue}>{userEmail || 'N/A'}</Text>
+                            <View style={[styles.infoText, rtlMargin(12)]}>
+                                <Text style={[styles.infoLabel, isRTL && styles.rtlText]}>{T.adminEmail}</Text>
+                                <Text style={[styles.infoValue, isRTL && styles.rtlText]}>{userEmail || 'N/A'}</Text>
                             </View>
                         </View>
                     </View>
                 </View>
 
-                {/* Actions */}
+                {/* ── Language Selector ── */}
                 <View style={styles.section}>
-                    <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-                        <Ionicons name="log-out-outline" size={24} color="white" />
-                        <Text style={styles.logoutButtonText}>Logout</Text>
+                    <Text style={[styles.sectionTitle, isRTL && styles.rtlText]}>
+                        {language === 'ar' ? 'اللغة' : 'Language'}
+                    </Text>
+                    <TouchableOpacity
+                        style={styles.card}
+                        onPress={() => setShowLanguageModal(true)}
+                        activeOpacity={0.7}
+                    >
+                        <View style={[styles.settingRow, rtlRow]}>
+                            <View style={[styles.settingLeft, rtlRow]}>
+                                <Ionicons name="language-outline" size={24} color="#2196F3" />
+                                <View style={[styles.settingText, rtlMargin(12)]}>
+                                    <Text style={[styles.settingTitle, isRTL && styles.rtlText]}>
+                                        {language === 'ar' ? 'العربية 🇲🇦' : 'English 🇬🇧'}
+                                    </Text>
+                                    <Text style={[styles.settingDescription, isRTL && styles.rtlText]}>
+                                        {language === 'ar' ? 'اضغط لتغيير اللغة' : 'Tap to change language'}
+                                    </Text>
+                                </View>
+                            </View>
+                            <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={20} color="#999" />
+                        </View>
                     </TouchableOpacity>
                 </View>
 
-                <View style={styles.footer}>
-                    <Text style={styles.footerText}>Admin Dashboard v1.0</Text>
-                    <Text style={styles.footerSubtext}>Restaurant Management System</Text>
+                {/* ── Logout ── */}
+                <View style={styles.section}>
+                    <TouchableOpacity style={[styles.logoutButton, rtlRow]} onPress={handleLogout}>
+                        <Ionicons name="log-out-outline" size={24} color="white" />
+                        <Text style={styles.logoutButtonText}>{T.logoutButton}</Text>
+                    </TouchableOpacity>
                 </View>
+
+                {/* ── Footer ── */}
+                <View style={styles.footer}>
+                    <Text style={styles.footerText}>{T.footerVersion}</Text>
+                    <Text style={styles.footerSubtext}>{T.footerSubtext}</Text>
+                </View>
+
             </ScrollView>
 
-            {/* Edit Operating Hours Modal */}
+            {/* ════════════════════════════════════════════════════════════════
+                Edit Operating Hours Modal
+            ════════════════════════════════════════════════════════════════ */}
             <Modal
                 visible={showHoursModal}
                 animationType="slide"
@@ -518,10 +582,11 @@ export default function AdminSettings() {
                 onRequestClose={() => setShowHoursModal(false)}
             >
                 <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>
-                                Edit {editingDay?.day_name} Hours
+                    <View style={[styles.modalContent, { paddingBottom: insets.bottom }]}>
+                        {/* Modal header */}
+                        <View style={[styles.modalHeader, rtlRow]}>
+                            <Text style={[styles.modalTitle, isRTL && styles.rtlText]}>
+                                {T.editHoursTitle} — {editingDay ? getDayName(editingDay.day_name) : ''}
                             </Text>
                             <TouchableOpacity onPress={() => setShowHoursModal(false)}>
                                 <Ionicons name="close" size={24} color="#666" />
@@ -529,9 +594,9 @@ export default function AdminSettings() {
                         </View>
 
                         <View style={styles.modalBody}>
-                            {/* Closed Toggle */}
-                            <View style={styles.closedToggleRow}>
-                                <Text style={styles.closedToggleLabel}>Closed this day</Text>
+                            {/* Closed toggle */}
+                            <View style={[styles.closedToggleRow, rtlRow]}>
+                                <Text style={[styles.closedToggleLabel, isRTL && styles.rtlText]}>{T.closedThisDay}</Text>
                                 <Switch
                                     value={editIsClosed}
                                     onValueChange={setEditIsClosed}
@@ -542,56 +607,44 @@ export default function AdminSettings() {
 
                             {!editIsClosed && (
                                 <>
-                                    {/* Open Time */}
+                                    {/* Opening time */}
                                     <View style={styles.timeInputGroup}>
-                                        <Text style={styles.timeLabel}>Opening Time</Text>
-                                        <View style={styles.timeControlRow}>
-                                            <TouchableOpacity
-                                                style={styles.timeButton}
-                                                onPress={() => decrementTime('open')}
-                                            >
+                                        <Text style={[styles.timeLabel, isRTL && styles.rtlText]}>{T.openingTime}</Text>
+                                        <View style={[styles.timeControlRow, rtlRow]}>
+                                            <TouchableOpacity style={styles.timeButton} onPress={() => decrementTime('open')}>
                                                 <Ionicons name="remove" size={20} color="#2196F3" />
                                             </TouchableOpacity>
                                             <View style={styles.timeDisplay}>
                                                 <Text style={styles.timeDisplayText}>{editOpenTime || '09:00'}</Text>
                                             </View>
-                                            <TouchableOpacity
-                                                style={styles.timeButton}
-                                                onPress={() => incrementTime('open')}
-                                            >
+                                            <TouchableOpacity style={styles.timeButton} onPress={() => incrementTime('open')}>
                                                 <Ionicons name="add" size={20} color="#2196F3" />
                                             </TouchableOpacity>
                                         </View>
-                                        <Text style={styles.timeHint}>Tap + or - to adjust by 30 minutes</Text>
+                                        <Text style={[styles.timeHint, isRTL && styles.rtlText]}>{T.timeHint}</Text>
                                     </View>
 
-                                    {/* Close Time */}
+                                    {/* Closing time */}
                                     <View style={styles.timeInputGroup}>
-                                        <Text style={styles.timeLabel}>Closing Time</Text>
-                                        <View style={styles.timeControlRow}>
-                                            <TouchableOpacity
-                                                style={styles.timeButton}
-                                                onPress={() => decrementTime('close')}
-                                            >
+                                        <Text style={[styles.timeLabel, isRTL && styles.rtlText]}>{T.closingTime}</Text>
+                                        <View style={[styles.timeControlRow, rtlRow]}>
+                                            <TouchableOpacity style={styles.timeButton} onPress={() => decrementTime('close')}>
                                                 <Ionicons name="remove" size={20} color="#2196F3" />
                                             </TouchableOpacity>
                                             <View style={styles.timeDisplay}>
                                                 <Text style={styles.timeDisplayText}>{editCloseTime || '22:00'}</Text>
                                             </View>
-                                            <TouchableOpacity
-                                                style={styles.timeButton}
-                                                onPress={() => incrementTime('close')}
-                                            >
+                                            <TouchableOpacity style={styles.timeButton} onPress={() => incrementTime('close')}>
                                                 <Ionicons name="add" size={20} color="#2196F3" />
                                             </TouchableOpacity>
                                         </View>
-                                        <Text style={styles.timeHint}>Tap + or - to adjust by 30 minutes</Text>
+                                        <Text style={[styles.timeHint, isRTL && styles.rtlText]}>{T.timeHint}</Text>
                                     </View>
 
-                                    {/* Quick Time Presets */}
+                                    {/* Quick presets */}
                                     <View style={styles.presetsSection}>
-                                        <Text style={styles.presetsLabel}>Quick Presets:</Text>
-                                        <View style={styles.presetsRow}>
+                                        <Text style={[styles.presetsLabel, isRTL && styles.rtlText]}>{T.quickPresets}</Text>
+                                        <View style={[styles.presetsRow, rtlRow]}>
                                             <TouchableOpacity
                                                 style={styles.presetButton}
                                                 onPress={() => { setEditOpenTime('09:00'); setEditCloseTime('22:00'); }}
@@ -616,12 +669,10 @@ export default function AdminSettings() {
                             )}
                         </View>
 
-                        <View style={styles.modalFooter}>
-                            <TouchableOpacity
-                                style={styles.cancelButton}
-                                onPress={() => setShowHoursModal(false)}
-                            >
-                                <Text style={styles.cancelButtonText}>Cancel</Text>
+                        {/* Modal footer — Cancel left / Save right in LTR, reversed in RTL */}
+                        <View style={[styles.modalFooter, rtlRow]}>
+                            <TouchableOpacity style={styles.cancelButton} onPress={() => setShowHoursModal(false)}>
+                                <Text style={styles.cancelButtonText}>{TC.cancel}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={[styles.saveButton, savingHours && styles.saveButtonDisabled]}
@@ -631,16 +682,64 @@ export default function AdminSettings() {
                                 {savingHours ? (
                                     <ActivityIndicator size="small" color="white" />
                                 ) : (
-                                    <Text style={styles.saveButtonText}>Save Changes</Text>
+                                    <Text style={styles.saveButtonText}>{TC.save}</Text>
                                 )}
                             </TouchableOpacity>
                         </View>
                     </View>
                 </View>
             </Modal>
+
+            {/* ── Language Selector Modal ── */}
+            <Modal
+                visible={showLanguageModal}
+                animationType="slide"
+                transparent={true}
+                onRequestClose={() => setShowLanguageModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalContent, { paddingBottom: insets.bottom }]}>
+                        <View style={[styles.modalHeader, rtlRow]}>
+                            <Text style={[styles.modalTitle, isRTL && styles.rtlText]}>
+                                {language === 'ar' ? 'اختر اللغة' : 'Select Language'}
+                            </Text>
+                            <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
+                                <Ionicons name="close" size={24} color="#666" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={[styles.modalBody, { gap: 10 }]}>
+                            <TouchableOpacity
+                                style={[styles.langBtn, language === 'en' && styles.langBtnActive, rtlRow]}
+                                onPress={() => handleSelectLanguage('en')}
+                                disabled={savingLanguage}
+                            >
+                                <Text style={[styles.langBtnText, language === 'en' && styles.langBtnTextActive]}>
+                                    🇬🇧  English
+                                </Text>
+                                {language === 'en' && <Ionicons name="checkmark" size={18} color="#2196F3" />}
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.langBtn, language === 'ar' && styles.langBtnActive, rtlRow]}
+                                onPress={() => handleSelectLanguage('ar')}
+                                disabled={savingLanguage}
+                            >
+                                <Text style={[styles.langBtnText, language === 'ar' && styles.langBtnTextActive]}>
+                                    🇲🇦  العربية
+                                </Text>
+                                {language === 'ar' && <Ionicons name="checkmark" size={18} color="#2196F3" />}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
         </View>
     );
 }
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
     container: {
@@ -767,7 +866,6 @@ const styles = StyleSheet.create({
         color: '#bbb',
         marginTop: 4,
     },
-    // Operating Hours Styles
     currentStatusRow: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -863,7 +961,6 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#666',
     },
-    // Modal Styles
     modalOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.5)',
@@ -1006,5 +1103,34 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: 'white',
         fontWeight: '600',
+    },
+
+    // ── RTL text alignment ─────────────────────────────────────────────────
+    rtlText: {
+        textAlign: 'right',
+    },
+
+    langBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        borderRadius: 10,
+        borderWidth: 1.5,
+        borderColor: '#e0e0e0',
+    },
+    langBtnActive: {
+        borderColor: '#2196F3',
+        backgroundColor: '#E3F2FD',
+    },
+    langBtnText: {
+        fontSize: 15,
+        color: '#555',
+        fontWeight: '500',
+    },
+    langBtnTextActive: {
+        color: '#2196F3',
+        fontWeight: '700',
     },
 });

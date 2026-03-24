@@ -733,7 +733,7 @@ export const useAdminWebSocket = () => {
     // Initialize audio mode
     Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
-      staysActiveInBackground: true,
+      staysActiveInBackground: false,
       playsInSilentModeIOS: true,
       shouldDuckAndroid: true,
       playThroughEarpieceAndroid: false,
@@ -781,7 +781,7 @@ export const useAdminWebSocket = () => {
         await Audio.setAudioModeAsync({
           playsInSilentModeIOS: true,
           allowsRecordingIOS: false,
-          staysActiveInBackground: true, // Crucial for background operation
+          staysActiveInBackground: false, // Crucial for background operation
           shouldDuckAndroid: true,
           playThroughEarpieceAndroid: false,
 

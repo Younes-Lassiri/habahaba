@@ -21,6 +21,7 @@ import {
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Circle, Path, Svg } from 'react-native-svg';
+import Colors from '@/constants/Colors';
 
 const ANDROID_API_KEY = 'AIzaSyABM4rY2G3rijHtFVgLnBNpWhGETKYn3BA';
 const IOS_API_KEY = 'AIzaSyCzxfUcrGi6V6D_cEXrmmB4sqTdl_8KL6Y';
@@ -692,6 +693,20 @@ export default function TrackOrderScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* ✅ This fills the status bar area on iOS with your primary color */}
+              {Platform.OS === 'ios' && (
+                <View
+                  style={{
+                    height: insets.top,
+                    backgroundColor: Colors.primary,
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    zIndex: 999,
+                  }}
+                />
+              )}
       {/* ── Header ── */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
@@ -724,7 +739,7 @@ export default function TrackOrderScreen() {
         </View>
       ) : (
         <>
-          <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
 
             {/* ── Hero Status Banner ── */}
             <LinearGradient
@@ -1591,17 +1606,13 @@ const styles = StyleSheet.create({
 
   // Footer
   footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: Brand.background,
-    borderTopWidth: 1,
-    borderTopColor: Brand.border,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    gap: 10,
-  },
+  backgroundColor: Brand.background,
+  borderTopWidth: 1,
+  borderTopColor: Brand.border,
+  paddingHorizontal: 16,
+  paddingTop: 12,
+  gap: 10,
+},
   primaryButton: {
     flexDirection: 'row',
     alignItems: 'center',

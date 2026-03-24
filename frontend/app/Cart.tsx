@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -168,6 +169,19 @@ export default function CartScreen() {
     }
   };
 
+  const roundDiscount = (amount: number): number => {
+    const decimal = amount % 1;
+    if (decimal === 0) return amount;
+    const base = Math.floor(amount);
+    return decimal <= 0.5 ? base + 0.5 : base + 1;
+  };
+
+const [promoDetails, setPromoDetails] = useState<{
+  discountType: string;
+  discountValue: number;
+  minSubtotal?: number;
+} | null>(null);
+
   const applyPromoCode = async () => {
     if (!promoCode.trim()) return;
 
@@ -180,7 +194,12 @@ export default function CartScreen() {
 
       if (response.data.success) {
         setAppliedPromo(promoCode.toUpperCase());
-        setPromoDiscount(response.data.promoCode.discountAmount);
+        setPromoDetails({
+          discountType: response.data.promoCode.discountType,
+          discountValue: response.data.promoCode.discountValue,
+          minSubtotal: response.data.promoCode.minSubtotal,
+        });
+        setPromoDiscount(roundDiscount(response.data.promoCode.discountAmount));
         setPromoDiscountType(response.data.promoCode.discountType);
         setPromoCode('');
         Toast.show({
@@ -204,11 +223,13 @@ export default function CartScreen() {
     }
   };
 
-  const removePromoCode = () => {
-    setAppliedPromo(null);
-    setPromoDiscount(0);
-    setPromoDiscountType(null);
-  };
+  
+const removePromoCode = () => {
+  setAppliedPromo(null);
+  setPromoDiscount(0);
+  setPromoDiscountType(null);
+  setPromoDetails(null); // ADD THIS
+};
 
   const [promoDiscount, setPromoDiscount] = useState(0);
   const [promoDiscountType, setPromoDiscountType] = useState<string | null>(null);
@@ -246,11 +267,6 @@ export default function CartScreen() {
         english: 'Change',
         arabic: 'تغيير',
         french: 'Changer'
-      },
-      estimated: {
-        english: 'Estimated: 35-45 min',
-        arabic: 'مُقدَّر: 35-45 دقيقة',
-        french: 'Estimé: 35-45 min'
       },
       noAddress: {
         english: 'No address selected',
@@ -883,9 +899,41 @@ export default function CartScreen() {
     dispatch(updateSpecialInstructionsAction({ id: itemId, instructions }));
   };
 
+
+  useEffect(() => {
+  if (!appliedPromo || !promoDetails) return;
+
+  const currentSubtotal = cartItems.reduce(
+    (sum: number, item: OrderItem) => sum + item.price * item.quantity, 0
+  );
+
+  if (promoDetails.discountType === 'percentage') {
+    const newDiscount = roundDiscount((currentSubtotal * promoDetails.discountValue) / 100);
+    setPromoDiscount(newDiscount);
+  } else if (promoDetails.discountType === 'fixed') {
+    setPromoDiscount(roundDiscount(Math.min(promoDetails.discountValue, currentSubtotal)));
+  } else if (promoDetails.discountType === 'free_delivery') {
+    setPromoDiscount(roundDiscount(deliveryFee));
+  }
+}, [cartItems, deliveryFee]);
+
   if (cartItems.length === 0) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
+        {/* ✅ This fills the status bar area on iOS with your primary color */}
+                {Platform.OS === 'ios' && (
+                  <View
+                    style={{
+                      height: insets.top,
+                      backgroundColor: Colors.primary,
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      zIndex: 999,
+                    }}
+                  />
+                )}
         <View style={[styles.header, isRTL && cartItems.length !== 0 && styles.headerAr]}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.push('/')}>
             <Text style={styles.backArrow}>←</Text>
@@ -915,6 +963,20 @@ export default function CartScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* ✅ This fills the status bar area on iOS with your primary color */}
+              {Platform.OS === 'ios' && (
+                <View
+                  style={{
+                    height: insets.top,
+                    backgroundColor: Colors.primary,
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    zIndex: 999,
+                  }}
+                />
+              )}
       <View style={{ zIndex: 100 }}><Toast /></View>
       <View style={[styles.header, isRTL && styles.headerAr]}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.push('/')}>
@@ -953,12 +1015,6 @@ export default function CartScreen() {
                     {getTranslation('change')}
                   </Text>
                 </TouchableOpacity>
-              </View>
-              <View style={[styles.estimatedTimeRow, isRTL && styles.estimatedTimeRowAr]}>
-                <Ionicons name="time-outline" size={14} color={Colors.text.secondary} />
-                <Text style={styles.estimatedTimeText}>
-                  {getTranslation('estimated')}
-                </Text>
               </View>
             </>
           ) : (
@@ -1006,6 +1062,8 @@ export default function CartScreen() {
                 value={promoCode}
                 onChangeText={setPromoCode}
                 autoCapitalize="characters"
+                returnKeyType="done"
+                onSubmitEditing={applyPromoCode}
               />
               <TouchableOpacity onPress={applyPromoCode} disabled={!promoCode.trim()}>
                 <Text style={[styles.applyText, !promoCode.trim() && styles.applyTextDisabled]}>

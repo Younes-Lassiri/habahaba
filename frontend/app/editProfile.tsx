@@ -514,6 +514,20 @@ const EditProfile: React.FC = () => {
 
   return (
     <View style={[styles.safeArea, { paddingTop: insets.top }]}>
+      {/* ✅ This fills the status bar area on iOS with your primary color */}
+              {Platform.OS === 'ios' && (
+                <View
+                  style={{
+                    height: insets.top,
+                    backgroundColor: Colors.primary,
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    zIndex: 999,
+                  }}
+                />
+              )}
       <ScrollView style={styles.scrollViewContent} showsVerticalScrollIndicator={false}>
         {/* Header - Back arrow always on left */}
         <View style={[styles.header, isRTL && styles.headerAr]}>

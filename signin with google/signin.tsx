@@ -313,6 +313,7 @@ const SignIn: React.FC = () => {
   const [rememberMe, setRememberMe] = useState(false);
   const [countryCode, setCountryCode] = useState('+212');
   const { login } = useAuth();
+  const [loadingGoogle, setLoadingGoogle] = useState(false);
 
   // ── Refs for keyboard navigation ─────────────────────────────────────────
   const emailRef     = useRef<TextInput>(null);
@@ -461,6 +462,55 @@ const SignIn: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // useEffect(() => {
+  //   GoogleSignin.configure({
+  //     scopes: ['https://www.googleapis.com/auth/userinfo.email'],
+  //     webClientId: '158740940579-ificug8hbe28n6kjjchj3ml53f29u9ka.apps.googleusercontent.com',
+  //     iosClientId: '158740940579-q1ljk05bp6iddbg435jofeddo2tlsl7p.apps.googleusercontent.com',
+  //     offlineAccess: true,
+  //   });
+  // }, []);
+
+  // const handleGoogleSignIn = async () => {
+  //   try {
+  //     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  //     setLoadingGoogle(true);
+  //     await GoogleSignin.hasPlayServices();
+  //     const googleResponse = await GoogleSignin.signIn();
+  //     console.log('Google Sign-In Success:', googleResponse);
+  //     const tokens = await GoogleSignin.getTokens();
+  //     const idToken = tokens.idToken;
+  //     if (!idToken) throw new Error('No ID token received from Google');
+  //     const userInfo = (googleResponse as any).user || (googleResponse as any).data?.user;
+  //     if (!userInfo || !userInfo.email) throw new Error('No user info received from Google');
+  //     const response = await fetch("https://haba-haba-api.ubua.cloud/api/auth/google-login", {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify({ idToken, email: userInfo.email, name: userInfo.name || userInfo.givenName, photo: userInfo.photo }),
+  //     });
+  //     const data = await response.json();
+  //     if (!response.ok) throw new Error(data.message || "Google login failed");
+  //     await AsyncStorage.setItem("token", data.token);
+  //     await AsyncStorage.setItem("client", JSON.stringify(data.client));
+  //     await login();
+  //     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  //     const clientId = data.client && data.client.id;
+  //     if (clientId) await registerForPushNotificationsAsync("client", clientId);
+  //     else console.error('No client ID found in response!');
+  //     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  //     router.push("/");
+  //   } catch (error: any) {
+  //     console.error('Google Sign-In Error:', error);
+  //     if (error.code === statusCodes.SIGN_IN_CANCELLED) Alert.alert('Cancelled', 'Sign in was cancelled');
+  //     else if (error.code === statusCodes.IN_PROGRESS) Alert.alert('In Progress', 'Sign in is already in progress');
+  //     else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) Alert.alert('Play Services', 'Google Play services not available');
+  //     else Alert.alert('Error', error.message || 'Google sign in failed');
+  //     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+  //   } finally {
+  //     setLoadingGoogle(false);
+  //   }
+  // };
 
   // ── Tab indicator animation with RTL support ─────────────────────────────
   const tabIndicatorStyle = useAnimatedStyle(() => ({
@@ -618,6 +668,28 @@ const SignIn: React.FC = () => {
             <View style={s.dividerLine} />
             <Text style={[s.dividerText, isRTL && s.textRTL]}>{t(translations.or)}</Text>
             <View style={s.dividerLine} />
+          </Animated.View>
+
+          {/* Social Logins */}
+          <Animated.View
+            entering={FadeInDown.delay(700).springify()}
+            style={s.socialLoginContainer}
+          >
+            <TouchableOpacity
+              style={[s.socialButton, { marginRight: 8 }]}
+              activeOpacity={0.7}
+              disabled={loading}
+              //onPress={handleGoogleSignIn}
+            >
+              <FontAwesome
+                name="google"
+                size={20}
+                color={'#DB4437'}
+              />
+              <Text style={s.socialButtonText}>
+                {loadingGoogle ? 'Signing in...' : 'Google'}
+              </Text>
+            </TouchableOpacity>
           </Animated.View>
 
           {/* Sign up row */}

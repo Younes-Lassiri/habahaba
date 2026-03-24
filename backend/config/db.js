@@ -10,27 +10,19 @@ const pool = mysql.createPool({
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
   waitForConnections: true,
-  connectionLimit: 5,
-  queueLimit: 0,
+  connectionLimit: 15,
+  queueLimit: 50,
+  connectTimeout: 30000,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 10000,
+  timezone: '+01:00',
   typeCast: (field, next) => {
-    // Convert TINYINT(1) to boolean
     if (field.type === "TINY" && field.length === 1) {
       const val = field.string();
       return val === "1" ? true : false;
     }
     return next();
-  },
-  // Critical settings for remote MySQL connections
-  enableKeepAlive: true,
-  keepAliveInitialDelay: 10000, // 10 seconds
-  // Connection timeout settings
-  connectTimeout: 30000, // 30 seconds
-  // Handle connection errors
-  maxIdle: 10,
-  idleTimeout: 60000, // 60 seconds - keep connections alive
-  // Reconnect settings
-  acquireTimeout: 30000,
-  timezone: '+01:00'  // Morocco timezone
+  }
 });
 
 // Test connection on startup
@@ -47,9 +39,6 @@ pool.getConnection()
 pool.on('connection', (connection) => {
   console.log('🔄 New MySQL connection established');
   
-  // Set session timeout to prevent premature disconnection
-  connection.query('SET SESSION wait_timeout = 28800'); // 8 hours
-  connection.query('SET SESSION interactive_timeout = 28800'); // 8 hours
 });
 
 pool.on('error', (err) => {
@@ -346,6 +335,16 @@ export const initDB = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       );
     `);
+
+    // Add language column if it doesn't exist
+    try {
+      await connection.query(`ALTER TABLE admins ADD COLUMN language varchar(200);`);
+      console.log('✅ Added attempts column to admins');
+    } catch (error) {
+      if (!error.message.includes('Duplicate column name')) {
+        console.log('Note: language column may already exist');
+      }
+  }
 
     // 🔔 Notifications table - NO foreign keys (polymorphic relationship)
     await connection.query(`
@@ -800,46 +799,35 @@ await fixTablesIfNeeded();
     // end the offers process
 // Enhanced executeQuery with better retry logic
 export const executeQuery = async (sql, params = []) => {
-  const MAX_RETRIES = 3;
-  let lastError;
+  try {
+    // pool.execute automatically handles: 
+    // 1. Grabs a connection from the pool.
+    // 2. Executes the query.
+    // 3. Releases the connection back to the pool INSTANTLY.
+    const [results] = await pool.execute(sql, params);
+    return [results]; 
+  } catch (error) {
+    // Check for common temporary connection issues
+    const isRetryable = 
+      error.code === 'PROTOCOL_CONNECTION_LOST' ||
+      error.code === 'ECONNRESET' ||
+      error.message?.includes('closed state') ||
+      error.message?.includes('Connection lost');
 
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    let connection;
-    try {
-      connection = await pool.getConnection();
-      const result = await connection.execute(sql, params);
-      return result;
-    } catch (error) {
-      lastError = error;
-      
-      // Check if it's a connection error that we can retry
-      const isRetryable = 
-        error.code === 'PROTOCOL_CONNECTION_LOST' ||
-        error.code === 'ECONNRESET' ||
-        error.message?.includes('closed state') ||
-        error.message?.includes('Connection lost');
-
-      if (attempt < MAX_RETRIES - 1 && isRetryable) {
-        console.warn(`⚠️ DB query failed (attempt ${attempt + 1}/${MAX_RETRIES}), retrying...`);
-        // Wait before retrying (exponential backoff)
-        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
-        continue;
-      }
-      
-      // If not retryable or max retries reached, throw error
-      throw error;
-    } finally {
-      if (connection) {
-        try {
-          connection.release();
-        } catch (releaseError) {
-          console.error('Error releasing connection:', releaseError.message);
-        }
+    if (isRetryable) {
+      console.warn("⚠️ Connection lost, attempting one immediate retry...");
+      try {
+        const [retryResults] = await pool.execute(sql, params);
+        return [retryResults];
+      } catch (retryError) {
+        console.error("❌ Retry failed:", retryError.message);
+        throw retryError;
       }
     }
+
+    console.error("❌ Database Error:", error.message);
+    throw error;
   }
-  
-  throw lastError;
 };
 
 export default pool;

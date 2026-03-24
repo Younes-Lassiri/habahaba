@@ -27,6 +27,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch } from 'react-redux';
 import { addItem } from './redux/slices/orderSlice';
+import Colors from '@/constants/Colors';
 
 // ─── Brand Tokens ─────────────────────────────────────────────────────────────
 const BRAND_BROWN = '#93522B';
@@ -994,6 +995,20 @@ const handleReorder = useCallback(async (order: Order) => {
 
   return (
     <View style={[newStyles.screen, { paddingTop: insets.top }]}>
+      {/* ✅ This fills the status bar area on iOS with your primary color */}
+              {Platform.OS === 'ios' && (
+                <View
+                  style={{
+                    height: insets.top,
+                    backgroundColor: Colors.primary,
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    zIndex: 999,
+                  }}
+                />
+              )}
 
       {/* ── Header ── */}
       <View style={newStyles.header}>

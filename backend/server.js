@@ -1,8 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-import db, { initDB } from "./config/db.js";
-import pool from "./config/db.js";
+import pool, { initDB } from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import deliveryManRoutes from "./routes/deliveryManRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
@@ -36,6 +35,36 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
+app.use((req, res, next) => {
+  const start = Date.now();
+  let finished = false;
+
+  console.log(`--> ${req.method} ${req.originalUrl}`);
+
+  res.on('finish', () => {
+    finished = true;
+    console.log(`<-- ${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - start}ms`);
+  });
+
+  res.on('close', () => {
+    if (!finished) {
+      console.log(`xx> ${req.method} ${req.originalUrl} closed ${Date.now() - start}ms`);
+    }
+  });
+
+  next();
+});
+
+app.use((req, res, next) => {
+  res.setTimeout(15000, () => {
+    console.error(`TIMEOUT ${req.method} ${req.originalUrl}`);
+    if (!res.headersSent) {
+      res.status(504).json({ message: 'Request timeout' });
+    }
+  });
+  next();
+});
 
 app.use("/api/auth", authRoutes);
 app.use("/api/delivery", deliveryManRoutes);
@@ -82,99 +111,59 @@ wss.on('connection', (ws, req) => {
     ws.isAlive = true;
   });
 
-  ws.on('message', async (message) => {
-    let connection1 = null; // For subscribe
-    let connection2 = null; // For notification_read
+ws.on('message', async (message) => {
+  try {
+    const data = JSON.parse(message.toString());
+    console.log('📨 WebSocket message received:', data.type, 'from', data.userId, data.userType);
 
-    try {
-      const data = JSON.parse(message.toString());
-      console.log('📨 WebSocket message received:', data.type, 'from', data.userId, data.userType);
+    if (data.type === 'subscribe' && data.userId && data.userType) {
+      const clientKey = `${data.userId}_${data.userType}`;
+      connectedClients.set(clientKey, ws);
+      ws.clientKey = clientKey;
+      ws.userId = data.userId;
+      ws.userType = data.userType;
 
-      if (data.type === 'subscribe' && data.userId && data.userType) {
-        const clientKey = `${data.userId}_${data.userType}`;
+      console.log(`📱 ${data.userType} ${data.userId} subscribed to notifications`);
+      console.log(`🔗 Total connected clients: ${connectedClients.size}`);
 
-        // Store connection with client key
-        connectedClients.set(clientKey, ws);
-        ws.clientKey = clientKey;
-        ws.userId = data.userId;
-        ws.userType = data.userType;
-
-        console.log(`📱 ${data.userType} ${data.userId} subscribed to notifications`);
-        console.log(`🔗 Total connected clients: ${connectedClients.size}`);
-
-        // Send current unread count
-        try {
-          connection1 = await pool.getConnection();
-          const [result] = await connection1.query(
-            "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND user_type = ? AND is_read = 0",
-            [data.userId, data.userType]
-          );
-
-          const unreadCount = result[0]?.count || 0;
-          console.log(`📊 Sending unread count to ${data.userType} ${data.userId}: ${unreadCount}`);
-
-          ws.send(JSON.stringify({
-            type: 'unread_count_update',
-            count: unreadCount
-          }));
-        } catch (error) {
-          console.error('Error fetching unread count:', error);
-        }
-      }
-
-      if (data.type === 'notification_read' && data.notificationId) {
-        // Handle notification read receipt
-        try {
-          connection2 = await pool.getConnection(); // SEPARATE connection
-
-          // Mark notification as read
-          await connection2.query(
-            "UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ? AND user_type = ?",
-            [data.notificationId, ws.userId, ws.userType]
-          );
-          console.log(`✅ Notification ${data.notificationId} marked as read by ${ws.userType} ${ws.userId}`);
-
-          // Get updated unread count
-          const [result] = await connection2.query(
-            "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND user_type = ? AND is_read = 0",
-            [ws.userId, ws.userType]
-          );
-
-          const unreadCount = result[0]?.count || 0;
-
-          // Send updated unread count to the client who marked it as read
-          ws.send(JSON.stringify({
-            type: 'unread_count_update',
-            count: unreadCount
-          }));
-
-          console.log(`📊 Updated unread count for ${ws.userType} ${ws.userId}: ${unreadCount}`);
-
-        } catch (error) {
-          console.error('Error updating notification read status:', error);
-        }
-      }
-
-    } catch (error) {
-      console.error('Error parsing WebSocket message:', error);
-    } finally {
-      // RELEASE BOTH connections if they exist
-      if (connection1) {
-        try {
-          connection1.release();
-        } catch (releaseError) {
-          console.error('Error releasing connection1:', releaseError.message);
-        }
-      }
-      if (connection2) {
-        try {
-          connection2.release();
-        } catch (releaseError) {
-          console.error('Error releasing connection2:', releaseError.message);
-        }
+      try {
+        const [result] = await pool.query(
+          "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND user_type = ? AND is_read = 0",
+          [data.userId, data.userType]
+        );
+        const unreadCount = result[0]?.count || 0;
+        console.log(`📊 Sending unread count to ${data.userType} ${data.userId}: ${unreadCount}`);
+        ws.send(JSON.stringify({ type: 'unread_count_update', count: unreadCount }));
+      } catch (error) {
+        console.error('Error fetching unread count:', error);
       }
     }
-  });
+
+    if (data.type === 'notification_read' && data.notificationId) {
+      try {
+        await pool.query(
+          "UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ? AND user_type = ?",
+          [data.notificationId, ws.userId, ws.userType]
+        );
+        console.log(`✅ Notification ${data.notificationId} marked as read by ${ws.userType} ${ws.userId}`);
+
+        const [result] = await pool.query(
+          "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND user_type = ? AND is_read = 0",
+          [ws.userId, ws.userType]
+        );
+        const unreadCount = result[0]?.count || 0;
+        ws.send(JSON.stringify({ type: 'unread_count_update', count: unreadCount }));
+        console.log(`📊 Updated unread count for ${ws.userType} ${ws.userId}: ${unreadCount}`);
+      } catch (error) {
+        console.error('Error updating notification read status:', error);
+      }
+    }
+
+  } catch (error) {
+    console.error('Error parsing WebSocket message:', error);
+  }
+  // No finally needed — no manual connections held
+});
 
   ws.on('close', () => {
     if (ws.clientKey) {
@@ -189,54 +178,32 @@ wss.on('connection', (ws, req) => {
 });
 
 // Function to send notification to specific user
-export const sendNotificationToUser = (userId, userType, notificationData) => {
+export const sendNotificationToUser = async (userId, userType, notificationData) => {
   const clientKey = `${userId}_${userType}`;
   const ws = connectedClients.get(clientKey);
 
-  if (ws && ws.readyState === 1) { // 1 = OPEN
-    try {
-      // First, send the new notification
-      ws.send(JSON.stringify({
-        type: 'new_notification',
-        data: notificationData
-      }));
-
-      console.log(`📨 Sent real-time notification to ${userType} ${userId}`);
-
-      // Then, fetch and send updated unread count
-      pool.getConnection().then(connection => {
-        connection.query(
-          "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND user_type = ? AND is_read = 0",
-          [userId, userType]
-        ).then(([result]) => {
-          const unreadCount = result[0]?.count || 0;
-
-          // Send unread count update
-          ws.send(JSON.stringify({
-            type: 'unread_count_update',
-            count: unreadCount
-          }));
-
-          console.log(`📊 Sent unread count update to ${userType} ${userId}: ${unreadCount}`);
-
-          connection.release();
-        }).catch(error => {
-          console.error(`Error fetching unread count for ${userType} ${userId}:`, error);
-          connection.release();
-        });
-      }).catch(error => {
-        console.error(`Error getting connection for unread count:`, error);
-      });
-
-      return true;
-    } catch (error) {
-      console.error(`Error sending to ${userType} ${userId}:`, error);
-      return false;
-    }
+  if (!ws || ws.readyState !== 1) {
+    console.log(`⚠️ ${userType} ${userId} not connected to WebSocket`);
+    return false;
   }
 
-  console.log(`⚠️ ${userType} ${userId} not connected to WebSocket`);
-  return false;
+  try {
+    ws.send(JSON.stringify({ type: 'new_notification', data: notificationData }));
+    console.log(`📨 Sent real-time notification to ${userType} ${userId}`);
+
+    const [result] = await pool.query(
+      "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND user_type = ? AND is_read = 0",
+      [userId, userType]
+    );
+    const unreadCount = result[0]?.count || 0;
+    ws.send(JSON.stringify({ type: 'unread_count_update', count: unreadCount }));
+    console.log(`📊 Sent unread count update to ${userType} ${userId}: ${unreadCount}`);
+
+    return true;
+  } catch (error) {
+    console.error(`Error sending to ${userType} ${userId}:`, error);
+    return false;
+  }
 };
 
 // Function to broadcast to all users of a type
@@ -261,19 +228,28 @@ export const broadcastToUserType = (userType, data) => {
 };
 
 // Process notification queue for offline users - FIXED with proper connection management
-const processNotificationQueue = async () => {
-  let connection; // ADDED: Declare connection variable
-  try {
-    connection = await pool.getConnection(); // GET CONNECTION
+let isProcessingQueue = false;
 
-    // Get unprocessed notifications from queue (last 30 minutes)
+const processNotificationQueue = async () => {
+  let connection;
+
+  if (isProcessingQueue) {
+    console.log('⏭️ Skipping queue run: previous run still active');
+    return;
+  }
+
+  isProcessingQueue = true;
+
+  try {
+    connection = await pool.getConnection();
+
     const [pendingNotifications] = await connection.query(`
       SELECT nq.*, n.title, n.message, n.is_read, n.created_at
       FROM notification_queue nq
       JOIN notifications n ON nq.notification_id = n.id
       WHERE nq.processed = FALSE
-      AND nq.created_at > DATE_SUB(NOW(), INTERVAL 30 MINUTE)
-      AND nq.attempts < 3
+        AND nq.created_at > DATE_SUB(NOW(), INTERVAL 30 MINUTE)
+        AND nq.attempts < 3
       ORDER BY nq.created_at ASC
       LIMIT 20
     `);
@@ -283,20 +259,22 @@ const processNotificationQueue = async () => {
     }
 
     for (const queueItem of pendingNotifications) {
-      let itemConnection; // ADDED: Separate connection for each item
       try {
-        // Parse data field if it exists
         let notificationData = {};
+
         if (queueItem.data) {
           try {
-            notificationData = JSON.parse(queueItem.data);
+            notificationData =
+              typeof queueItem.data === 'string'
+                ? JSON.parse(queueItem.data)
+                : queueItem.data;
           } catch (parseError) {
             console.error(`Error parsing data for queue item ${queueItem.id}:`, parseError);
+            notificationData = {};
           }
         }
 
-        // Try to send via WebSocket
-        const sent = sendNotificationToUser(
+        const sent = await sendNotificationToUser(
           queueItem.user_id.toString(),
           queueItem.user_type,
           {
@@ -310,31 +288,19 @@ const processNotificationQueue = async () => {
         );
 
         if (sent) {
-          // Mark as processed - use separate connection
-          itemConnection = await pool.getConnection();
-          await itemConnection.query(
+          await pool.query(
             'UPDATE notification_queue SET processed = TRUE WHERE id = ?',
             [queueItem.id]
           );
           console.log(`✅ Queued notification sent to ${queueItem.user_type} ${queueItem.user_id}`);
         } else {
-          // Increment attempts - use separate connection
-          if (!itemConnection) itemConnection = await pool.getConnection();
-          await itemConnection.query(
+          await pool.query(
             'UPDATE notification_queue SET attempts = attempts + 1 WHERE id = ?',
             [queueItem.id]
           );
         }
       } catch (error) {
         console.error(`Error processing queue item ${queueItem.id}:`, error);
-      } finally {
-        if (itemConnection) {
-          try {
-            itemConnection.release(); // RELEASE ITEM CONNECTION
-          } catch (releaseError) {
-            console.error('Error releasing item connection:', releaseError.message);
-          }
-        }
       }
     }
   } catch (error) {
@@ -342,11 +308,13 @@ const processNotificationQueue = async () => {
   } finally {
     if (connection) {
       try {
-        connection.release(); // CRITICAL: RELEASE MAIN CONNECTION
+        connection.release();
       } catch (releaseError) {
         console.error('Error releasing main connection:', releaseError.message);
       }
     }
+
+    isProcessingQueue = false;
   }
 };
 
@@ -364,20 +332,18 @@ const pingInterval = setInterval(() => {
 }, 120000); // CHANGED: Ping every 2 minutes instead of 30 seconds
 
 // Process queue every 30 seconds instead of 3 seconds
-const queueInterval = setInterval(processNotificationQueue, 30000); // CHANGED: Every 30 seconds
+//const queueInterval = setInterval(processNotificationQueue, 30000); // CHANGED: Every 30 seconds
 
 // Function to log database notification status
 const logNotificationStatus = async () => {
-  let connection;
   try {
-    connection = await pool.getConnection();
-    const [adminNotifications] = await connection.query(
+    const [adminNotifications] = await pool.query(
       "SELECT COUNT(*) as total, SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread FROM notifications WHERE user_type = 'admin'"
     );
-    const [adminQueue] = await connection.query(
+    const [adminQueue] = await pool.query(
       "SELECT COUNT(*) as total FROM notification_queue WHERE user_type = 'admin' AND processed = FALSE"
     );
-    const [activeAdmins] = await connection.query(
+    const [activeAdmins] = await pool.query(
       "SELECT COUNT(*) as total FROM admins WHERE is_active = 1"
     );
     console.log('📊 NOTIFICATION STATUS:');
@@ -387,20 +353,16 @@ const logNotificationStatus = async () => {
     console.log(`   🔗 Connected Clients: ${connectedClients.size}`);
     let adminConnections = 0;
     connectedClients.forEach((ws, key) => {
-      if (key.includes('_admin')) {
-        adminConnections++;
-      }
+      if (key.includes('_admin')) adminConnections++;
     });
     console.log(`   📱 Connected Admin Clients: ${adminConnections}`);
   } catch (error) {
     console.error('Error logging notification status:', error);
-  } finally {
-    if (connection) connection.release();
   }
 };
 
 // Add periodic logging
-const statusLogInterval = setInterval(logNotificationStatus, 30000); // Every 30 seconds
+// const statusLogInterval = setInterval(logNotificationStatus, 30000); // Every 30 seconds
 
 // Scheduler for automatic is_open updates (runs every minute)
 let isOpenSchedulerInterval = null;
@@ -428,8 +390,8 @@ const startIsOpenScheduler = () => {
 // Cleanup on server shutdown
 server.on('close', () => {
   clearInterval(pingInterval);
-  clearInterval(queueInterval);
-  clearInterval(statusLogInterval);
+  //clearInterval(queueInterval);
+  //clearInterval(statusLogInterval);
   if (isOpenSchedulerInterval) {
     clearInterval(isOpenSchedulerInterval);
     console.log('⏰ Restaurant scheduler stopped');

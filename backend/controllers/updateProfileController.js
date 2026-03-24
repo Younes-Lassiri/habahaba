@@ -103,7 +103,6 @@ export const updateProfile = async (req, res) => {
       }
     }
 
-    connection.release();
 
     // 4️⃣ Make sure at least one field exists
     if (!name && !email && !phone && !birthDate && !gender && !bio && !adresses && imagePath === null && lat === null && lon === null) {
@@ -166,6 +165,146 @@ export const updateProfile = async (req, res) => {
   } catch (error) {
     console.error("❌ Error updating profile:", error.message);
     return res.status(500).json({ message: "Server error" });
+  } finally {
+    if (connection) connection.release();
+  }
+};
+
+
+// delete account
+
+export const deleteAccount = async (req, res) => {
+  let connection;
+  try {
+    // 1️⃣ Get clientId injected by verifyToken middleware
+    const clientId = req.clientId;
+
+    connection = await pool.getConnection();
+
+    // 2️⃣ Confirm client exists + grab profile image filename
+    const [rows] = await connection.execute(
+      "SELECT id, image FROM clients WHERE id = ?",
+      [clientId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Account not found" });
+    }
+
+    const client = rows[0];
+
+    // 3️⃣ Start transaction — all or nothing
+    await connection.beginTransaction();
+
+    try {
+
+      // ── offer_usages (FK: user_id → clients) ──────────────────────────────
+      await connection.execute(
+        "DELETE FROM offer_usages WHERE user_id = ?",
+        [clientId]
+      );
+      console.log(`🗑️ Deleted offer_usages for client ${clientId}`);
+
+      // ── order_ratings (FK: user_id → clients) ─────────────────────────────
+      await connection.execute(
+        "DELETE FROM order_ratings WHERE user_id = ?",
+        [clientId]
+      );
+      console.log(`🗑️ Deleted order_ratings for client ${clientId}`);
+
+      // ── Get all order IDs for this client before deleting orders ───────────
+      const [orderRows] = await connection.execute(
+        "SELECT id FROM orders WHERE user_id = ?",
+        [clientId]
+      );
+      const orderIds = orderRows.map((r) => r.id);
+
+      if (orderIds.length > 0) {
+        const placeholders = orderIds.map(() => "?").join(", ");
+
+        // ── order_promo_codes (FK: order_id → orders) ───────────────────────
+        await connection.execute(
+          `DELETE FROM order_promo_codes WHERE order_id IN (${placeholders})`,
+          orderIds
+        );
+        console.log(`🗑️ Deleted order_promo_codes for client ${clientId}`);
+
+        // ── order_items (FK: order_id → orders) ─────────────────────────────
+        await connection.execute(
+          `DELETE FROM order_items WHERE order_id IN (${placeholders})`,
+          orderIds
+        );
+        console.log(`🗑️ Deleted order_items for client ${clientId}`);
+      }
+
+      // ── orders (FK: user_id → clients) ────────────────────────────────────
+      await connection.execute(
+        "DELETE FROM orders WHERE user_id = ?",
+        [clientId]
+      );
+      console.log(`🗑️ Deleted orders for client ${clientId}`);
+
+      // ── favorites (FK: client_id → clients) ───────────────────────────────
+      await connection.execute(
+        "DELETE FROM favorites WHERE client_id = ?",
+        [clientId]
+      );
+      console.log(`🗑️ Deleted favorites for client ${clientId}`);
+
+      // ── notifications (polymorphic — no FK, safe to delete directly) ───────
+      // notification_queue has FK → notifications ON DELETE CASCADE,
+      // so it will be automatically cleaned up when notifications are deleted
+      await connection.execute(
+        "DELETE FROM notifications WHERE user_id = ? AND user_type = 'client'",
+        [clientId]
+      );
+      console.log(`🗑️ Deleted notifications for client ${clientId}`);
+
+      // ── device_tokens (polymorphic — no FK, safe to delete directly) ───────
+      await connection.execute(
+        "DELETE FROM device_tokens WHERE user_id = ? AND user_type = 'client'",
+        [clientId]
+      );
+      console.log(`🗑️ Deleted device_tokens for client ${clientId}`);
+
+      // ── clients (the main record — must be last) ───────────────────────────
+      const [result] = await connection.execute(
+        "DELETE FROM clients WHERE id = ?",
+        [clientId]
+      );
+
+      if (result.affectedRows === 0) {
+        await connection.rollback();
+        return res.status(404).json({ success: false, message: "Account not found or already deleted" });
+      }
+
+      // ── Commit transaction ─────────────────────────────────────────────────
+      await connection.commit();
+      console.log(`✅ Account permanently deleted for client ID: ${clientId}`);
+
+    } catch (txError) {
+      await connection.rollback();
+      console.error("❌ Transaction rolled back:", txError.message);
+      throw txError;
+    }
+
+    // 4️⃣ Delete profile image from disk AFTER commit (non-critical if it fails)
+    if (client.image) {
+      const imagePath = path.join("uploads/profileImages", client.image);
+      if (fs.existsSync(imagePath)) {
+        fs.unlinkSync(imagePath);
+        console.log(`🗑️ Deleted profile image: ${imagePath}`);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Account permanently deleted",
+    });
+
+  } catch (error) {
+    console.error("❌ Error deleting account:", error.message);
+    return res.status(500).json({ success: false, message: "Server error" });
   } finally {
     if (connection) connection.release();
   }

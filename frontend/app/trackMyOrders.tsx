@@ -19,6 +19,7 @@ import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import Colors from "@/constants/Colors";
 
 // --- Color palette (exactly matching SignupScreen) ---
 const C = {
@@ -170,6 +171,20 @@ const TrackMyOrders: React.FC<TrackMyOrdersProps> = ({ userLanguage = 'english' 
   return (
     <SafeAreaView style={[s.safe, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+      {/* ✅ This fills the status bar area on iOS with your primary color */}
+              {Platform.OS === 'ios' && (
+                <View
+                  style={{
+                    height: insets.top,
+                    backgroundColor: Colors.primary,
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    zIndex: 999,
+                  }}
+                />
+              )}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

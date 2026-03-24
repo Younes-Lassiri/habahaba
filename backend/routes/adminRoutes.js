@@ -88,6 +88,7 @@ import {
   bulkUpdateOperatingHours,
   getOpenStatus,
   toggleRestaurantOpen,
+  changePanelLanguage,
 } from "../controllers/adminController.js";
 import { verifyAdminToken } from "../middleware/adminAuth.js";
 
@@ -308,5 +309,6 @@ router.put('/operating-hours/bulk', verifyAdminToken, bulkUpdateOperatingHours);
 router.get('/open-status', verifyAdminToken, getOpenStatus);
 router.post('/toggle-open', verifyAdminToken, toggleRestaurantOpen);
 
+router.post('/set-language', changePanelLanguage)
 export default router;
 

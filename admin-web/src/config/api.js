@@ -1,4 +1,3 @@
-cat > api.js << 'EOF'
 const trimTrailingSlash = (url = '') => url.replace(/\/+$/, '');
 
 const getBackendBaseUrl = () => {
@@ -26,4 +25,3 @@ export const getImageUrl = (imagePath) => {
   }
   return `${BACKEND_BASE_URL}/${imagePath.replace(/^\/+/, '')}`;
 };
-EOF

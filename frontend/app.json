@@ -1,32 +1,31 @@
 {
   "expo": {
+    "orientation": "default",
+    "name": "Haba Haba Food Delivery",
+    "slug": "habba-habba-food-delivery-app",
+    "version": "1.0.3",
+    "icon": "./assets/images/playstorelogo.png",
+    "scheme": "restaurantapp",
+    "userInterfaceStyle": "automatic",
+    "owner": "habahabaiosreview",
     "splash": {
-      "image": "./assets/images/playStoreLogo.png",
+      "image": "./assets/images/playstorelogo.png",
       "backgroundColor": "#ffffff",
       "resizeMode": "contain"
     },
-    "name": "Haba Haba Food Delivery ",
-    "slug": "habba-habba-food-delivery-app",
-    "version": "1.1.0",
-    "orientation": "portrait",
-    "icon": "./assets/images/playStoreLogo.png",
-    "scheme": "restaurantapp",
-    "userInterfaceStyle": "automatic",
     "plugins": [
-      "./withPodfilePostInstall.js",
       [
         "expo-build-properties",
         {
           "android": {
+            "newArchEnabled": true,
             "enableProguardInReleaseBuilds": false,
-            "enableMinifyInReleaseBuilds": false,
-            "newArchEnabled": true
+            "enableMinifyInReleaseBuilds": false
           },
           "ios": {
             "newArchEnabled": true,
             "useFrameworks": "static",
-            "buildReactNativeFromSource": true,
-            "shouldAddAutomaticallyToTarget": true
+            "buildReactNativeFromSource": true
           }
         }
       ],
@@ -44,15 +43,9 @@
         }
       ],
       [
-        "expo-system-ui",
-        {
-          "edgeToEdge": true
-        }
-      ],
-      [
         "expo-notifications",
         {
-          "icon": "./assets/images/playStoreLogo.png",
+          "icon": "./assets/images/playstorelogo.png",
           "androidMode": "badge",
           "androidCollapsedTitle": "New Order",
           "channels": [
@@ -73,19 +66,17 @@
         }
       ],
       "expo-router",
-      "./withNotificationConflict.js",
-      "@react-native-community/datetimepicker",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      "@react-native-community/datetimepicker",
+      "./withPodfilePostInstall.js",
+      "./withNotificationConflict.js"
     ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.habba.app",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "UIBackgroundModes": [
-          "audio"
-        ],
         "NSLocationWhenInUseUsageDescription": "This app needs access to your location to set your address automatically",
         "NSLocationAlwaysUsageDescription": "This app needs access to your location to provide location-based features.",
         "NSCameraUsageDescription": "This app uses the camera to take profile pictures.",
@@ -94,11 +85,16 @@
         "ITSAppUsesNonExemptEncryption": false
       },
       "config": {
+        "usesNonExemptEncryption": false,
         "googleMapsApiKey": "AIzaSyCx4qoEgZzG3A7VW9_gxpEWAqMSeNs_DfY"
       }
     },
     "android": {
       "package": "com.habba.app",
+      "versionCode": 4,
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.INTERNET",
@@ -110,21 +106,14 @@
         "android.permission.RECORD_AUDIO"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/playStoreLogo.png",
-        "backgroundImage": "./assets/images/playStoreLogo.png",
-        "monochromeImage": "./assets/images/playStoreLogo.png"
+        "foregroundImage": "./assets/images/playstorelogo.png"
       },
-      "predictiveBackGestureEnabled": false,
-      "googleServicesFile": "./google-services.json",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyCx4qoEgZzG3A7VW9_gxpEWAqMSeNs_DfY"
         }
-      },
-      "versionCode": 4
+      }
     },
-    "owner": "habahabaios",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -135,7 +124,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "4e516272-4533-4047-a882-0f39a1a0a654"
+        "projectId": "7c739148-f85e-4c80-bc4e-790c278b2f83"
       },
       "router": {}
     }

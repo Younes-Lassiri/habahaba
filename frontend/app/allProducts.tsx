@@ -305,7 +305,21 @@ const AllProductsPage: React.FC<AllProductsProps> = ({
   }, [filteredProducts.length, userId, products, userLanguage]);
 
   return (
-    <SafeAreaView style={[styles.container, Platform.OS === 'android' ? { paddingTop: insets.top } : null]}>
+    <SafeAreaView style={[styles.container, { paddingTop: insets.top }]}>
+      {/* ✅ This fills the status bar area on iOS with your primary color */}
+              {Platform.OS === 'ios' && (
+                <View
+                  style={{
+                    height: insets.top,
+                    backgroundColor: Colors.primary,
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    zIndex: 999,
+                  }}
+                />
+              )}
       <View style={{ zIndex: 100 }}><Toast /></View>
 
       {/* Header */}
@@ -463,8 +477,8 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   backButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 20 },
-  headerTitleContainer: { flex: 1, gap: 0 },
-  headerTitle: { fontSize: 18, fontWeight: '600', color: Colors.text.primary, flex: 1 },
+  headerTitleContainer: { flex: 1, flexDirection: 'column', gap: 4 },
+  headerTitle: { fontSize: 18, fontWeight: '600', color: Colors.text.primary },
   headerTitleAr: { fontSize: 18, fontWeight: '600', color: Colors.text.primary, textAlign: 'right' },
   headerSubtitle: { fontSize: 13, color: Colors.text.secondary, fontWeight: '500' },
   headerSubtitleAr: { fontSize: 13, color: Colors.text.secondary, fontWeight: '500', textAlign: 'right' },

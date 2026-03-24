@@ -14,7 +14,6 @@ import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, Region } from 'react-native-maps';
-
 import Colors from '@/constants/Colors';
 
 interface AddressPickerProps {
@@ -36,7 +35,7 @@ export default function AddressPicker({
   const [selectedAddress, setSelectedAddress] = useState(currentAddress);
   const [searchQuery, setSearchQuery] = useState('');
   const [region, setRegion] = useState<Region>({
-    latitude: 33.5731, // Default to Morocco center
+    latitude: 33.5731,
     longitude: -7.5898,
     latitudeDelta: 0.05,
     longitudeDelta: 0.05,
@@ -50,230 +49,176 @@ export default function AddressPicker({
   }, [visible]);
 
   const getCurrentLocation = async () => {
-  try {
-    setLoading(true);
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Denied', 'Location permission is required to select an address.');
-      setLoading(false);
-      return;
-    }
+    try {
+      setLoading(true);
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Location permission is required to select an address.');
+        setLoading(false);
+        return;
+      }
 
-    const currentLocation = await Location.getCurrentPositionAsync({
-      accuracy: Platform.OS === 'android' 
-        ? Location.Accuracy.Highest 
-        : Location.Accuracy.Balanced,
-    });
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced, // Balanced is faster on both platforms
+      });
 
-    const { latitude, longitude } = currentLocation.coords;
-    setLocation({ latitude, longitude });
-    
-    // Update map region
-    setRegion({
-      latitude,
-      longitude,
-      latitudeDelta: 0.01,
-      longitudeDelta: 0.01,
-    });
+      const { latitude, longitude } = currentLocation.coords;
+      setLocation({ latitude, longitude });
 
-    if (mapRef.current) {
-      mapRef.current.animateToRegion({
+      const newRegion = {
         latitude,
         longitude,
         latitudeDelta: 0.01,
         longitudeDelta: 0.01,
-      }, 1000);
+      };
+      setRegion(newRegion);
+
+      // Run map animation and geocoding IN PARALLEL
+      const [address] = await Promise.all([
+        reverseGeocode(latitude, longitude),
+        mapRef.current?.animateToRegion(newRegion, 1000),
+      ]);
+
+      setSelectedAddress(address);
+    } catch (error) {
+      console.error('Error getting location:', error);
+      Alert.alert('Error', 'Could not get your location. Please try again.');
+    } finally {
+      setLoading(false);
     }
+  };
 
-    // Reverse geocode to get address
-    const address = await reverseGeocode(latitude, longitude);
-    setSelectedAddress(address);
-  } catch (error) {
-    console.error('Error getting location:', error);
-    Alert.alert('Error', 'Could not get your location. Please try again.');
-  } finally {
-    setLoading(false);
-  }
-};
-
-const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
-  try {
-    // Try Expo's built-in reverse geocoding first (more reliable)
+  const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
     try {
-      const addresses = await Location.reverseGeocodeAsync({
-        latitude: lat,
-        longitude: lon,
-      });
-      
-      if (addresses && addresses.length > 0) {
-        const address = addresses[0];
-        const formattedAddress = [
-          address.street,
-          address.streetNumber,
-          address.city,
-          address.region,
-          address.postalCode,
-          address.country,
-        ]
-          .filter(Boolean)
-          .join(', ');
-        
-        if (formattedAddress) {
-          console.log(`[${Platform.OS}] Expo Geocoding success: ${formattedAddress}`);
-          return formattedAddress;
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
+        {
+          headers: {
+            'User-Agent': 'FoodDeliveryApp/1.0 (contact@foodapp.com)',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
+          },
         }
-      }
-    } catch (expoError) {
-      console.log(`[${Platform.OS}] Expo Geocoding failed, falling back to Nominatim:`, expoError);
-    }
+      );
 
-    // Fallback to Nominatim with proper headers
-    console.log(`[${Platform.OS}] Using Nominatim for: ${lat}, ${lon}`);
-    
-    // Add delay to prevent rate limiting
-    await new Promise<void>(resolve => setTimeout(resolve, 1000));
-    
-    const response = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
-      {
-        headers: {
-          'User-Agent': 'FoodDeliveryApp/1.0 (contact@foodapp.com)', // REQUIRED for Android
-          'Accept': 'application/json',
-          'Accept-Language': 'en-US,en;q=0.9',
-        }
+      console.log(`[${Platform.OS}] Response status: ${response.status}`);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-    );
-    
-    console.log(`[${Platform.OS}] Response status: ${response.status}`);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    if (data.error) {
-      console.log(`[${Platform.OS}] Nominatim error:`, data.error);
+
+      const data = await response.json();
+
+      if (data.error) {
+        console.log(`[${Platform.OS}] Nominatim error:`, data.error);
+        return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+      }
+
+      if (data.display_name) {
+        console.log(`[${Platform.OS}] Using display_name: ${data.display_name}`);
+        return data.display_name;
+      }
+
+      const addr = data.address || {};
+      const formattedAddress = [
+        addr.road || addr.pedestrian || addr.footway,
+        addr.house_number,
+        addr.neighbourhood || addr.suburb,
+        addr.city || addr.town || addr.village || addr.municipality,
+        addr.postcode,
+        addr.country,
+      ]
+        .filter(Boolean)
+        .join(', ');
+
+      const result = formattedAddress || `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+      console.log(`[${Platform.OS}] Constructed address: ${result}`);
+      return result;
+    } catch (error) {
+      console.error(`[${Platform.OS}] Reverse geocode error:`, error);
       return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
     }
-    
-    const addr = data.address || {};
-    
-    // Use display_name if available (complete address)
-    if (data.display_name) {
-      console.log(`[${Platform.OS}] Using display_name: ${data.display_name}`);
-      return data.display_name;
-    }
-    
-    // Fallback to constructing address from parts
-    const formattedAddress = [
-      addr.road || addr.pedestrian || addr.footway,
-      addr.house_number,
-      addr.neighbourhood || addr.suburb,
-      addr.city || addr.town || addr.village || addr.municipality,
-      addr.postcode,
-      addr.country,
-    ]
-      .filter(Boolean)
-      .join(', ');
-    
-    const result = formattedAddress || `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-    console.log(`[${Platform.OS}] Constructed address: ${result}`);
-    return result;
-  } catch (error) {
-    console.error(`[${Platform.OS}] Reverse geocode error:`, error);
-    // Return coordinates as fallback
-    return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-  }
-};
+  };
 
-const handleMapPress = async (event: any) => {
-  try {
-    const { latitude, longitude } = event.nativeEvent.coordinate || {};
-    if (latitude && longitude) {
-      setLocation({ latitude, longitude });
-      const address = await reverseGeocode(latitude, longitude);
-      setSelectedAddress(address);
-    }
-  } catch (error) {
-    console.error('Error handling map press:', error);
-  }
-};
-
-const handleSearch = async () => {
-  if (!searchQuery.trim()) return;
-
-  try {
-    setLoading(true);
-    
-    // Add delay and proper headers for Nominatim search
-    await new Promise<void>(resolve => setTimeout(resolve, 1000));
-    
-    const response = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-        searchQuery
-      )}&limit=1&addressdetails=1`,
-      {
-        headers: {
-          'User-Agent': 'FoodDeliveryApp/1.0 (contact@foodapp.com)',
-          'Accept': 'application/json',
-          'Accept-Language': 'en-US,en;q=0.9',
-        }
+  const handleMapPress = async (event: any) => {
+    try {
+      const { latitude, longitude } = event.nativeEvent.coordinate || {};
+      if (latitude && longitude) {
+        setLocation({ latitude, longitude });
+        const address = await reverseGeocode(latitude, longitude);
+        setSelectedAddress(address);
       }
-    );
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    } catch (error) {
+      console.error('Error handling map press:', error);
     }
-    
-    const data = await response.json();
+  };
 
-    if (data && data.length > 0) {
-      const result = data[0];
-      const lat = parseFloat(result.lat);
-      const lon = parseFloat(result.lon);
-      const newLocation = { latitude: lat, longitude: lon };
-      setLocation(newLocation);
-      
-      // Use display_name from search result if available
-      const address = result.display_name || searchQuery;
-      setSelectedAddress(address);
-      
-      // Update map region
-      setRegion({
-        latitude: lat,
-        longitude: lon,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      });
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    try {
+      setLoading(true);
 
-      if (mapRef.current) {
-        mapRef.current.animateToRegion({
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+          searchQuery
+        )}&limit=1&addressdetails=1`,
+        {
+          headers: {
+            'User-Agent': 'FoodDeliveryApp/1.0 (contact@foodapp.com)',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data && data.length > 0) {
+        const result = data[0];
+        const lat = parseFloat(result.lat);
+        const lon = parseFloat(result.lon);
+        const newLocation = { latitude: lat, longitude: lon };
+        setLocation(newLocation);
+
+        const address = result.display_name || searchQuery;
+        setSelectedAddress(address);
+
+        setRegion({
           latitude: lat,
           longitude: lon,
           latitudeDelta: 0.01,
           longitudeDelta: 0.01,
-        }, 1000);
+        });
+        if (mapRef.current) {
+          mapRef.current.animateToRegion({
+            latitude: lat,
+            longitude: lon,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          }, 1000);
+        }
+      } else {
+        Alert.alert('Not Found', 'Address not found. Please try a different search term.');
       }
-    } else {
-      Alert.alert('Not Found', 'Address not found. Please try a different search term.');
+    } catch (error) {
+      console.error('Search error:', error);
+      Alert.alert('Error', 'Could not search for address. Please try again.');
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    console.error('Search error:', error);
-    Alert.alert('Error', 'Could not search for address. Please try again.');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
-const handleConfirm = () => {
-  if (location) {
-    onSelectAddress(selectedAddress, location);
-    onClose();
-  } else {
-    Alert.alert('Error', 'Please select a location on the map.');
-  }
-};
+  const handleConfirm = () => {
+    if (location) {
+      onSelectAddress(selectedAddress, location);
+      onClose();
+    } else {
+      Alert.alert('Error', 'Please select a location on the map.');
+    }
+  };
 
   return (
     <Modal
@@ -282,7 +227,7 @@ const handleConfirm = () => {
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={[styles.container, { paddingTop: Platform.OS === 'ios' ? insets.top : 0 }]}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.backButton}>
             <Ionicons name="arrow-back" size={24} color={Colors.text.primary} />
@@ -363,7 +308,7 @@ const handleConfirm = () => {
         )}
 
         {/* Action Buttons */}
-        <View style={styles.footer}>
+        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) + 16 }]}>
           <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </TouchableOpacity>
@@ -540,7 +485,6 @@ const styles = StyleSheet.create({
   footer: {
     flexDirection: 'row',
     padding: 16,
-    paddingBottom: 24,
     gap: 12,
     backgroundColor: '#FFFBF7',
     borderTopWidth: 1,

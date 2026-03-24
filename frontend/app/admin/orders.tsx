@@ -1098,141 +1098,97 @@ export default function AdminOrders() {
 
     const renderOrderDetailsModal = () => (
         <Modal
-            visible={showOrderModal}
-            animationType="slide"
-            transparent={true}
-            onRequestClose={() => setShowOrderModal(false)}
+  visible={showOrderModal}
+  animationType="slide"
+  transparent={true}
+  onRequestClose={() => setShowOrderModal(false)}
+>
+  <View style={styles.modalOverlay}>
+    <View style={[styles.modalContent, { paddingBottom: insets.bottom }]}>
+      <View style={styles.modalHeader}>
+        <Text style={styles.modalTitle}>Order Details</Text>
+        <TouchableOpacity
+          style={styles.closeButtonContainer}
+          onPress={() => setShowOrderModal(false)}
         >
-            <View style={styles.modalOverlay}>
-                <View style={styles.modalContent}>
-                    <View style={styles.modalHeader}>
-                        <Text style={styles.modalTitle}>Order Details</Text>
-                        <TouchableOpacity
-                            style={styles.closeButtonContainer}
-                            onPress={() => setShowOrderModal(false)}
-                        >
-                            <Text style={styles.closeButton}>✕</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-                        {selectedOrder && (
-                            <>
-                                <View style={styles.detailSection}>
-                                    <Text style={styles.detailLabel}>ORDER NUMBER</Text>
-                                    <Text style={styles.detailValue}>#{selectedOrder.order_number}</Text>
-                                </View>
-
-                                <View style={styles.detailCard}>
-                                    <Text style={styles.cardTitle}>Customer Information</Text>
-                                    <View style={styles.customerDetailRow}>
-                                        <View style={styles.detailItem}>
-                                            <Text style={styles.detailItemLabel}>Name</Text>
-                                            <Text style={styles.detailItemValue}>{selectedOrder.customer_name || 'N/A'}</Text>
-                                        </View>
-                                        <View style={styles.detailItem}>
-                                            <Text style={styles.detailItemLabel}>Phone</Text>
-                                            <Text style={styles.detailItemValue}>{selectedOrder.customer_phone || 'N/A'}</Text>
-                                        </View>
-                                    </View>
-                                </View>
-
-                                <View style={styles.detailCard}>
-                                    <Text style={styles.cardTitle}>Delivery Address</Text>
-                                    <Text style={styles.addressText}>{selectedOrder.delivery_address}</Text>
-                                </View>
-
-                                <View style={styles.detailCard}>
-                                    <Text style={styles.cardTitle}>Order Items</Text>
-                                    {orderItems.map((item, index) => (
-                                        <View key={index} style={styles.itemCard}>
-                                            <View style={styles.itemHeader}>
-                                                <Text style={styles.itemName}>{item.product_name}</Text>
-                                                <Text style={styles.itemPrice}>MAD {formatPrice(item.quantity * item.price_per_unit)}</Text>
-                                            </View>
-                                            <View style={styles.itemDetails}>
-                                                <Text style={styles.itemDetail}>Quantity: {item.quantity}</Text>
-                                                <Text style={styles.itemDetail}>Unit Price: MAD {formatPrice(item.price_per_unit)}</Text>
-                                            </View>
-                                            {item.special_instructions && (
-                                                <Text style={styles.specialInstructions}>
-                                                    📝 Note: {item.special_instructions}
-                                                </Text>
-                                            )}
-                                        </View>
-                                    ))}
-                                </View>
-
-                                <View style={styles.detailCard}>
-                                    <Text style={styles.cardTitle}>Payment Summary</Text>
-                                    <View style={styles.priceSummary}>
-                                        <View style={styles.priceRow}>
-                                            <Text style={styles.priceRowLabel}>Subtotal</Text>
-                                            <Text style={styles.priceRowValue}>MAD {formatPrice(selectedOrder.total_price)}</Text>
-                                        </View>
-                                        <View style={styles.priceRow}>
-                                            <Text style={styles.priceRowLabel}>Delivery Fee</Text>
-                                            <Text style={styles.priceRowValue}>MAD {formatPrice(selectedOrder.delivery_fee)}</Text>
-                                        </View>
-                                        {selectedOrder.discount > 0 && (
-                                            <View style={styles.priceRow}>
-                                                <Text style={styles.priceRowLabel}>Discount</Text>
-                                                <Text style={[styles.priceRowValue, { color: '#4CAF50' }]}>
-                                                    - MAD {formatPrice(selectedOrder.discount)}
-                                                </Text>
-                                            </View>
-                                        )}
-                                        <View style={[styles.priceRow, styles.totalRow]}>
-                                            <Text style={styles.totalLabel}>Total Amount</Text>
-                                            <Text style={styles.totalValue}>MAD {formatPrice(selectedOrder.final_price)}</Text>
-                                        </View>
-                                    </View>
-                                </View>
-
-                                <View style={styles.statusActionsSection}>
-                                    <Text style={styles.detailLabel}>CHANGE ORDER STATUS</Text>
-                                    <View style={styles.statusButtonsGrid}>
-                                        {['Pending', 'Preparing', 'OutForDelivery', 'Delivered', 'Cancelled'].map((status) => (
-                                            <TouchableOpacity
-                                                key={status}
-                                                style={[
-                                                    styles.statusActionButton,
-                                                    selectedOrder.status === status && styles.statusActionButtonActive,
-                                                    {
-                                                        borderColor: statusColors[status],
-                                                        backgroundColor: selectedOrder.status === status
-                                                            ? statusBgColors[status]
-                                                            : 'white'
-                                                    },
-                                                ]}
-                                                onPress={() => updateOrderStatus(selectedOrder.id, status)}
-                                                disabled={processingOrderId === selectedOrder.id}
-                                            >
-                                                <Text style={[styles.statusIcon, { color: statusColors[status], fontSize: 18 }]}>
-                                                    {statusIcons[status]}
-                                                </Text>
-                                                <Text
-                                                    style={[
-                                                        styles.statusActionButtonText,
-                                                        selectedOrder.status === status && {
-                                                            color: statusColors[status],
-                                                            fontWeight: '700',
-                                                        },
-                                                        { color: statusColors[status] }
-                                                    ]}
-                                                >
-                                                    {statusLabels[status]}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </View>
-                                </View>
-                            </>
-                        )}
-                    </ScrollView>
-                </View>
+          <Text style={styles.closeButton}>✕</Text>
+        </TouchableOpacity>
+      </View>
+      <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+        {selectedOrder && (
+          <>
+            <View style={styles.detailSection}>
+              <Text style={styles.detailLabel}>ORDER NUMBER</Text>
+              <Text style={styles.detailValue}>#{selectedOrder.order_number}</Text>
             </View>
-        </Modal>
+            <View style={styles.detailCard}>
+              <Text style={styles.cardTitle}>Customer Information</Text>
+              <View style={styles.customerDetailRow}>
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailItemLabel}>Name</Text>
+                  <Text style={styles.detailItemValue}>{selectedOrder.customer_name || 'N/A'}</Text>
+                </View>
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailItemLabel}>Phone</Text>
+                  <Text style={styles.detailItemValue}>{selectedOrder.customer_phone || 'N/A'}</Text>
+                </View>
+              </View>
+            </View>
+            <View style={styles.detailCard}>
+              <Text style={styles.cardTitle}>Delivery Address</Text>
+              <Text style={styles.addressText}>{selectedOrder.delivery_address}</Text>
+            </View>
+            <View style={styles.detailCard}>
+              <Text style={styles.cardTitle}>Order Items</Text>
+              {orderItems.map((item, index) => (
+                <View key={index} style={styles.itemCard}>
+                  <View style={styles.itemHeader}>
+                    <Text style={styles.itemName}>{item.product_name}</Text>
+                    <Text style={styles.itemPrice}>MAD {formatPrice(item.quantity * item.price_per_unit)}</Text>
+                  </View>
+                  <View style={styles.itemDetails}>
+                    <Text style={styles.itemDetail}>Quantity: {item.quantity}</Text>
+                    <Text style={styles.itemDetail}>Unit Price: MAD {formatPrice(item.price_per_unit)}</Text>
+                  </View>
+                  {item.special_instructions && (
+                    <Text style={styles.specialInstructions}>
+                      📝 Note: {item.special_instructions}
+                    </Text>
+                  )}
+                </View>
+              ))}
+            </View>
+            <View style={styles.detailCard}>
+              <Text style={styles.cardTitle}>Payment Summary</Text>
+              <View style={styles.priceSummary}>
+                <View style={styles.priceRow}>
+                  <Text style={styles.priceRowLabel}>Subtotal</Text>
+                  <Text style={styles.priceRowValue}>MAD {formatPrice(selectedOrder.total_price)}</Text>
+                </View>
+                <View style={styles.priceRow}>
+                  <Text style={styles.priceRowLabel}>Delivery Fee</Text>
+                  <Text style={styles.priceRowValue}>MAD {formatPrice(selectedOrder.delivery_fee)}</Text>
+                </View>
+                {selectedOrder.discount > 0 && (
+                  <View style={styles.priceRow}>
+                    <Text style={styles.priceRowLabel}>Discount</Text>
+                    <Text style={[styles.priceRowValue, { color: '#4CAF50' }]}>
+                      - MAD {formatPrice(selectedOrder.discount)}
+                    </Text>
+                  </View>
+                )}
+                <View style={[styles.priceRow, styles.totalRow]}>
+                  <Text style={styles.totalLabel}>Total Amount</Text>
+                  <Text style={styles.totalValue}>MAD {formatPrice(selectedOrder.final_price)}</Text>
+                </View>
+              </View>
+            </View>
+          </>
+        )}
+      </ScrollView>
+    </View>
+  </View>
+</Modal>
     );
 
     const renderAssignModal = () => {
@@ -1246,7 +1202,7 @@ export default function AdminOrders() {
                 onRequestClose={() => setShowAssignModal(false)}
             >
                 <View style={styles.modalOverlay}>
-                    <View style={[styles.modalContent, { maxHeight: '85%' }]}>
+                    <View style={[styles.modalContent, { maxHeight: '85%', paddingBottom: insets.bottom }]}>
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>🚚 Assign Delivery Driver</Text>
                             <TouchableOpacity
@@ -1379,7 +1335,7 @@ export default function AdminOrders() {
             }}
         >
             <View style={styles.modalOverlay}>
-                <View style={[styles.modalContent, { maxHeight: '90%', borderRadius: 24 }]}>
+                <View style={[styles.modalContent, { maxHeight: '90%', borderRadius: 24, paddingBottom: insets.bottom + 20 }]}>
                     <View style={styles.modalHeader}>
                         <Text style={styles.modalTitle}>Set Preparation Time</Text>
                         <TouchableOpacity
@@ -1531,47 +1487,6 @@ export default function AdminOrders() {
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-
-            {/* Fixed Header */}
-            <View style={[styles.header, { paddingTop: insets.top - 10 }]}>
-                <View style={styles.headerContent}>
-                    <View>
-                        <Text style={styles.headerTitle}>Orders Dashboard</Text>
-                        <Text style={styles.headerSubtitle}>Welcome back, {adminUser || 'Admin'}</Text>
-                    </View>
-                    <View style={styles.headerActions}>
-                        <TouchableOpacity
-                            style={[
-                                styles.clusterButton,
-                                showClusterView && styles.clusterButtonActive
-                            ]}
-                            onPress={() => {
-                                if (showClusterView) {
-                                    setShowClusterView(false);
-                                    setClusters([]);
-                                } else {
-                                    generateClusters();
-                                }
-                            }}
-                            disabled={clusteringInProgress}
-                        >
-                            {clusteringInProgress ? (
-                                <ActivityIndicator size="small" color="#fff" />
-                            ) : (
-                                <>
-                                    <Text style={styles.clusterButtonIcon}>
-                                        {showClusterView ? '✕' : '📦'}
-                                    </Text>
-                                    <Text style={styles.clusterButtonText}>
-                                        {showClusterView ? 'Exit' : 'Cluster'}
-                                    </Text>
-                                </>
-                            )}
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </View>
-
             {/* Status Tabs */}
             {!showClusterView && renderStatusTabs()}
 
@@ -1810,6 +1725,37 @@ export default function AdminOrders() {
             {renderOrderDetailsModal()}
             {renderAssignModal()}
             {renderTimeInputModal()}
+
+            <View style={{position: 'fixed', bottom: 20, left: 20, width: 100}}>
+                <TouchableOpacity
+                            style={[
+                                styles.clusterButton,
+                                showClusterView && styles.clusterButtonActive
+                            ]}
+                            onPress={() => {
+                                if (showClusterView) {
+                                    setShowClusterView(false);
+                                    setClusters([]);
+                                } else {
+                                    generateClusters();
+                                }
+                            }}
+                            disabled={clusteringInProgress}
+                        >
+                            {clusteringInProgress ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <>
+                                    <Text style={styles.clusterButtonIcon}>
+                                        {showClusterView ? '✕' : '📦'}
+                                    </Text>
+                                    <Text style={styles.clusterButtonText}>
+                                        {showClusterView ? 'Exit' : 'Cluster'}
+                                    </Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
+            </View>
         </SafeAreaView>
     );
 }

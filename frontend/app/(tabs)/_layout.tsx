@@ -134,6 +134,7 @@ export default function TabLayout() {
         headerShown: false,
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: '#8E8E93',
+        tabBarLabelPosition: 'below-icon', // ← ADD THIS LINE
         tabBarStyle: {
           height: 70,
           backgroundColor: '#FFFFFF',

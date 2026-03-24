@@ -3,29 +3,31 @@ LogBox.ignoreLogs([
     'Text strings must be rendered within a <Text> component',
     'Each child in a list should have a unique "key" prop',
 ]);
+
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FlashList } from '@shopify/flash-list';
 import axios from 'axios';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
-    Dimensions,
     Image,
     LogBox,
     RefreshControl,
     StyleSheet,
     Switch,
     Text,
+    TextInput,
     TouchableOpacity,
-    View
+    View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useLanguage } from './contexts/LanguageContext'; // adjust path if needed
 
 const API_URL = 'https://haba-haba-api.ubua.cloud/api/admin';
 const IMAGE_BASE_URL = 'https://haba-haba-api.ubua.cloud';
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Category {
     id: number;
@@ -56,40 +58,93 @@ interface Product {
     best_for?: string;
 }
 
+// ─── Price rounding helper ─────────────────────────────────────────────────────
+// Always rounds UP to the nearest 0.5, with a floor of 0.5
+// e.g. 46.06 → ceil(92.12)/2 = 93/2 = 46.5
+//      86.4  → ceil(172.8)/2  = 173/2 = 86.5
+//      86.7  → ceil(173.4)/2  = 174/2 = 87.0
+const roundToHalf = (value: number): number => {
+    const ceiled = Math.ceil(value * 2) / 2;
+    return Math.max(0.5, ceiled);
+};
+
+const formatPromoPrice = (price: number, promoValue: number): string => {
+    const raw = price - price * (promoValue / 100);
+    return roundToHalf(raw).toFixed(2);
+};
+
+const formatPrice = (price: number | string | null | undefined): string => {
+    const num = Number(price);
+    return isNaN(num) ? '0.00' : num.toFixed(2);
+};
+
+const getImageUrl = (imagePath: string | undefined | null): string | null => {
+    if (!imagePath) return null;
+    if (imagePath.startsWith('http')) return imagePath;
+    return `${IMAGE_BASE_URL}${imagePath.startsWith('/') ? '' : '/'}${imagePath}`;
+};
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
 export default function AdminProducts() {
     const [token, setToken] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [categories, setCategories] = useState<Category[]>([]);
     const [products, setProducts] = useState<Product[]>([]);
-    const insets = useSafeAreaInsets();
     const [selectedTab, setSelectedTab] = useState<'categories' | 'products'>('products');
+    const [searchQuery, setSearchQuery] = useState('');
+
+    // ── Language ──────────────────────────────────────────────────────────────
+    const { language, t, isRTL } = useLanguage();
+    const TP = t.products;
+    const TC = t.common;
+
+    // ── RTL helpers ───────────────────────────────────────────────────────────
+    const rtlRow = isRTL ? { flexDirection: 'row-reverse' as const } : {};
+    const rtlMargin = (ltrMarginLeft: number) =>
+        isRTL
+            ? { marginRight: ltrMarginLeft, marginLeft: 0 }
+            : { marginLeft: ltrMarginLeft };
+
+    // ── Filtered lists ────────────────────────────────────────────────────────
+    const filteredProducts = useMemo(() => {
+        if (!searchQuery.trim()) return products;
+        const q = searchQuery.toLowerCase();
+        return products.filter(
+            (p) =>
+                p.name.toLowerCase().includes(q) ||
+                (p.category_name && p.category_name.toLowerCase().includes(q))
+        );
+    }, [products, searchQuery]);
+
+    const filteredCategories = useMemo(() => {
+        if (!searchQuery.trim()) return categories;
+        const q = searchQuery.toLowerCase();
+        return categories.filter((c) => c.name.toLowerCase().includes(q));
+    }, [categories, searchQuery]);
+
+    // ── Data loading ──────────────────────────────────────────────────────────
 
     useEffect(() => {
         loadAdminToken();
     }, []);
 
     useEffect(() => {
-        if (token) {
-            fetchData();
-        }
+        if (token) fetchData();
     }, [token, selectedTab]);
+
+    // Reset search when tab changes
+    useEffect(() => {
+        setSearchQuery('');
+    }, [selectedTab]);
 
     const loadAdminToken = async () => {
         try {
-            // Directly get the token string from AsyncStorage
-            const token = await AsyncStorage.getItem('adminToken');
-            console.log('🔍 Token from storage:', token ? 'Exists' : 'Missing');
-
-            if (token) {
-                console.log('📏 Token length:', token.length);
-                console.log('🔐 Token preview:', token.substring(0, 30) + '...');
-                setToken(token);
-            } else {
-                console.log('❌ No admin token found in storage');
-            }
+            const storedToken = await AsyncStorage.getItem('adminToken');
+            if (storedToken) setToken(storedToken);
         } catch (error) {
-            console.error('❌ Error loading admin token:', error);
+            console.error('Error loading admin token:', error);
         } finally {
             setLoading(false);
         }
@@ -97,11 +152,8 @@ export default function AdminProducts() {
 
     const fetchData = async () => {
         try {
-            if (selectedTab === 'categories') {
-                await fetchCategories();
-            } else {
-                await fetchProducts();
-            }
+            if (selectedTab === 'categories') await fetchCategories();
+            else await fetchProducts();
         } catch (error) {
             console.error('Error fetching data:', error);
         }
@@ -110,32 +162,23 @@ export default function AdminProducts() {
     const fetchCategories = async () => {
         try {
             setLoading(true);
-
-            // Get fresh token
             const currentToken = await AsyncStorage.getItem('adminToken');
-
-            if (!currentToken) {
-                console.error('❌ No token found');
-                Alert.alert('Error', 'Please login again');
-                return;
-            }
+            if (!currentToken) { Alert.alert(TC.error, TC.sessionExpiredMessage); return; }
 
             const response = await axios.get(`${API_URL}/categories`, {
-                headers: {
-                    Authorization: `Bearer ${currentToken}`,
-                    'Content-Type': 'application/json'
-                },
+                headers: { Authorization: `Bearer ${currentToken}`, 'Content-Type': 'application/json' },
             });
-            // Ensure we always set an array (avoid setting a string/object which would render raw text)
-            setCategories(Array.isArray(response.data?.categories) ? response.data.categories : (Array.isArray(response.data) ? response.data : []));
+            setCategories(
+                Array.isArray(response.data?.categories)
+                    ? response.data.categories
+                    : Array.isArray(response.data) ? response.data : []
+            );
         } catch (error: any) {
-            console.error('Error fetching categories:', error);
-
             if (error.response?.status === 401) {
-                Alert.alert('Session Expired', 'Please login again');
+                Alert.alert(TC.sessionExpired, TC.sessionExpiredMessage);
                 await AsyncStorage.removeItem('adminToken');
             } else {
-                Alert.alert('Error', 'Failed to fetch categories');
+                Alert.alert(TC.error, TP.failedToggleCategory);
             }
         } finally {
             setLoading(false);
@@ -146,38 +189,23 @@ export default function AdminProducts() {
     const fetchProducts = async () => {
         try {
             setLoading(true);
-
-            // Get fresh token each time
             const currentToken = await AsyncStorage.getItem('adminToken');
-
-            if (!currentToken) {
-                console.error('❌ No token found');
-                Alert.alert('Error', 'Please login again');
-                return;
-            }
-
-            console.log('🔄 Fetching products with token:', currentToken.substring(0, 30) + '...');
+            if (!currentToken) { Alert.alert(TC.error, TC.sessionExpiredMessage); return; }
 
             const response = await axios.get(`${API_URL}/products`, {
-                headers: {
-                    Authorization: `Bearer ${currentToken}`,
-                    'Content-Type': 'application/json'
-                },
+                headers: { Authorization: `Bearer ${currentToken}`, 'Content-Type': 'application/json' },
             });
-
-            // Ensure we always set an array (avoid setting a string/object which would render raw text)
-            setProducts(Array.isArray(response.data?.products) ? response.data.products : (Array.isArray(response.data) ? response.data : []));
-
+            setProducts(
+                Array.isArray(response.data?.products)
+                    ? response.data.products
+                    : Array.isArray(response.data) ? response.data : []
+            );
         } catch (error: any) {
-            console.error('❌ Error fetching products:', error);
-            console.error('❌ Error status:', error.response?.status);
-            console.error('❌ Error data:', error.response?.data);
-
             if (error.response?.status === 401) {
-                Alert.alert('Session Expired', 'Please login again');
+                Alert.alert(TC.sessionExpired, TC.sessionExpiredMessage);
                 await AsyncStorage.removeItem('adminToken');
             } else {
-                Alert.alert('Error', error.response?.data?.message || 'Failed to fetch products');
+                Alert.alert(TC.error, TP.failedToggleProduct);
             }
         } finally {
             setLoading(false);
@@ -185,109 +213,46 @@ export default function AdminProducts() {
         }
     };
 
-    const renderItem = React.useCallback(({ item }: { item: any }) => {
-        if (selectedTab === 'categories') {
-            return renderCategoryCard(item);
-        }
-        return renderProductCard(item);
-    }, [selectedTab, products, categories]);
-
-
     const availabilityToggle = async (productId: number, currentStatus: boolean) => {
         try {
             const currentToken = await AsyncStorage.getItem('adminToken');
-
-            if (!currentToken) {
-                Alert.alert('Error', 'Please login again');
-                return;
-            }
+            if (!currentToken) { Alert.alert(TC.error, TC.sessionExpiredMessage); return; }
 
             await axios.put(
                 `${API_URL}/${productId}/toggle-availability`,
                 { active: !currentStatus },
-                {
-                    headers: {
-                        Authorization: `Bearer ${currentToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
+                { headers: { Authorization: `Bearer ${currentToken}`, 'Content-Type': 'application/json' } }
             );
-
-            // Update local state immediately for better UX
-            setProducts(prevProducts =>
-                prevProducts.map(product =>
-                    product.id === productId
-                        ? { ...product, active: !currentStatus }
-                        : product
-                )
+            setProducts((prev) =>
+                prev.map((p) => (p.id === productId ? { ...p, active: !currentStatus } : p))
             );
-
-            Alert.alert(
-                'Success',
-                `Product ${!currentStatus ? 'activated' : 'deactivated'} successfully`,
-                [{ text: 'OK' }]
-            );
-
+            Alert.alert(TC.success, `${!currentStatus ? TC.active : TC.inactive}`);
         } catch (error: any) {
-            console.error('Error toggling product availability:', error);
-
             if (error.response?.status === 401) {
-                Alert.alert('Session Expired', 'Please login again');
+                Alert.alert(TC.sessionExpired, TC.sessionExpiredMessage);
                 await AsyncStorage.removeItem('adminToken');
             } else {
-                Alert.alert('Error', error.response?.data?.message || 'Failed to update product availability');
+                Alert.alert(TC.error, TP.failedToggleProduct);
             }
         }
-    };
-
-    const formatPrice = (price: number | string | null | undefined): string => {
-        const num = Number(price);
-        return isNaN(num) ? '0.00' : num.toFixed(2);
-    };
-
-    const getImageUrl = (imagePath: string | undefined | null): string | null => {
-        if (!imagePath) return null;
-        if (imagePath.startsWith('http')) return imagePath;
-        return `${IMAGE_BASE_URL}${imagePath.startsWith('/') ? '' : '/'}${imagePath}`;
     };
 
     const categoryToggle = async (categoryId: number, currentStatus: boolean) => {
         try {
             const currentToken = await AsyncStorage.getItem('adminToken');
+            if (!currentToken) { Alert.alert(TC.error, TC.sessionExpiredMessage); return; }
 
-            if (!currentToken) {
-                Alert.alert('Error', 'Please login again');
-                return;
-            }
-
-            // Use the existing updateCategory endpoint
             await axios.put(
                 `${API_URL}/categories/${categoryId}`,
                 { active: !currentStatus },
-                {
-                    headers: {
-                        Authorization: `Bearer ${currentToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
+                { headers: { Authorization: `Bearer ${currentToken}`, 'Content-Type': 'application/json' } }
             );
-
-            setCategories(prevCategories =>
-                prevCategories.map(category =>
-                    category.id === categoryId
-                        ? { ...category, active: !currentStatus }
-                        : category
-                )
+            setCategories((prev) =>
+                prev.map((c) => (c.id === categoryId ? { ...c, active: !currentStatus } : c))
             );
-
-            Alert.alert(
-                'Success',
-                `Category ${!currentStatus ? 'activated' : 'deactivated'} successfully`
-            );
-
+            Alert.alert(TC.success, `${!currentStatus ? TC.active : TC.inactive}`);
         } catch (error: any) {
-            console.error('Error toggling category:', error);
-            Alert.alert('Error', error.response?.data?.message || 'Failed to update category');
+            Alert.alert(TC.error, TP.failedToggleCategory);
         }
     };
 
@@ -295,79 +260,57 @@ export default function AdminProducts() {
         setRefreshing(true);
         fetchData();
     };
-    useEffect(() => {
-        const debugToken = async () => {
-            const allKeys = await AsyncStorage.getAllKeys();
-            console.log('📋 All storage keys:', allKeys);
 
-            const token = await AsyncStorage.getItem('adminToken');
-            console.log('🔑 Token from storage:', {
-                exists: !!token,
-                length: token?.length,
-                preview: token?.substring(0, 30) + '...'
-            });
+    // ── Render helpers ────────────────────────────────────────────────────────
 
-            const adminData = await AsyncStorage.getItem('adminData');
-            console.log('👤 Admin data:', adminData);
-        };
-
-        debugToken();
-    }, []);
     const renderCategoryCard = (category: Category) => {
         const imageUrl = getImageUrl(category.image);
-
         return (
             <View key={category.id} style={styles.categoryCard}>
-                {/* Category Image */}
-                <View style={styles.categoryImageContainer}>
+                {/* Thumb */}
+                <View style={styles.categoryThumb}>
                     {imageUrl ? (
                         <Image
                             source={{ uri: imageUrl.replace(/\\/g, '/') }}
-                            style={styles.categoryImage}
+                            style={styles.categoryThumbImage}
                             resizeMode="cover"
                         />
                     ) : (
-                        <View style={styles.categoryImagePlaceholder}>
-                            <Ionicons name="grid-outline" size={32} color="#94A3B8" />
+                        <View style={styles.categoryThumbPlaceholder}>
+                            <Ionicons name="grid-outline" size={22} color="#94A3B8" />
                         </View>
                     )}
-                    {/* Active/Inactive overlay */}
                     {!category.active && (
                         <View style={styles.inactiveOverlay}>
-                            <Text style={styles.inactiveOverlayText}>Inactive</Text>
+                            <Text style={styles.inactiveOverlayText}>{TC.inactive}</Text>
                         </View>
                     )}
                 </View>
 
-                {/* Category Info */}
-                <View style={styles.categoryInfo}>
-                    <View style={styles.categoryHeader}>
-                        <Text style={styles.categoryName} numberOfLines={1}>{category.name}</Text>
-                        <View style={[
-                            styles.statusDot,
-                            category.active ? styles.statusDotActive : styles.statusDotInactive
-                        ]} />
+                {/* Info */}
+                <View style={[styles.categoryBody, rtlRow]}>
+                    <View style={{ flex: 1 }}>
+                        <View style={[styles.nameRow, rtlRow]}>
+                            <View style={[styles.statusDot, category.active ? styles.dotActive : styles.dotInactive]} />
+                            <Text style={[styles.categoryName, isRTL && styles.rtlText]} numberOfLines={1}>
+                                {category.name}
+                            </Text>
+                        </View>
+                        {category.description ? (
+                            <Text style={[styles.categoryDesc, isRTL && styles.rtlText]} numberOfLines={1}>
+                                {category.description}
+                            </Text>
+                        ) : null}
                     </View>
 
-                    {category.description && (
-                        <Text style={styles.categoryDescription} numberOfLines={2}>
-                            {category.description}
-                        </Text>
-                    )}
-
-                    <View style={styles.categoryFooter}>
-                        <Text style={styles.categoryDate}>
-                            {category.created_at ? new Date(category.created_at).toLocaleDateString() : ''}
-                        </Text>
-                        <Switch
-                            value={Boolean(category.active)}
-                            onValueChange={() => categoryToggle(category.id, Boolean(category.active))}
-                            trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
-                            thumbColor="#FFFFFF"
-                            ios_backgroundColor="#E0E0E0"
-                            style={styles.categorySwitch}
-                        />
-                    </View>
+                    <Switch
+                        value={Boolean(category.active)}
+                        onValueChange={() => categoryToggle(category.id, Boolean(category.active))}
+                        trackColor={{ false: '#E2E8F0', true: '#86EFAC' }}
+                        thumbColor={category.active ? '#16A34A' : '#CBD5E1'}
+                        ios_backgroundColor="#E2E8F0"
+                        style={styles.switchScale}
+                    />
                 </View>
             </View>
         );
@@ -376,117 +319,96 @@ export default function AdminProducts() {
     const renderProductCard = (product: Product) => {
         const imageUrl = getImageUrl(product.image);
         const hasPromo = product.promo && product.promoValue && product.promoValue > 0;
-        const discountedPrice = hasPromo
-            ? product.price - (product.price * (product.promoValue! / 100))
-            : product.price;
 
         return (
             <View key={product.id} style={styles.productCard}>
-                {/* Product Image */}
-                <View style={styles.productImageContainer}>
-                    {imageUrl ? (
-                        <Image
-                            source={{ uri: imageUrl.replace(/\\/g, '/') }}
-                            style={styles.productImage}
-                            resizeMode="cover"
-                        />
-                    ) : (
-                        <View style={styles.productImagePlaceholder}>
-                            <Ionicons name="fast-food-outline" size={40} color="#94A3B8" />
-                        </View>
-                    )}
-
-                    {/* Badges overlay */}
-                    <View style={styles.badgesContainer}>
-                        {hasPromo && (
-                            <View style={styles.promoBadge}>
-                                <Text style={styles.promoBadgeText}>-{product.promoValue}%</Text>
-                            </View>
-                        )}
-                        {product.badge && (
-                            <View style={styles.customBadge}>
-                                <Text style={styles.customBadgeText}>{product.badge}</Text>
-                            </View>
-                        )}
-                    </View>
-
-                    {/* Inactive overlay */}
-                    {!product.active && (
-                        <View style={styles.inactiveOverlay}>
-                            <Text style={styles.inactiveOverlayText}>Inactive</Text>
-                        </View>
-                    )}
-                </View>
-
-                {/* Product Info */}
-                <View style={styles.productInfo}>
-                    {/* Header with name and popular badge */}
-                    <View style={styles.productNameRow}>
-                        <Text style={styles.productName} numberOfLines={1}>{product.name}</Text>
-                        {product.is_popular && (
-                            <View style={styles.popularBadge}>
-                                <Text style={styles.popularText}>⭐</Text>
-                            </View>
-                        )}
-                    </View>
-
-                    {/* Description */}
-                    {product.description && (
-                        <Text style={styles.productDescription} numberOfLines={2}>
-                            {product.description}
-                        </Text>
-                    )}
-
-                    {/* Rating and Category */}
-                    <View style={styles.productMetaRow}>
-                        {product.rating !== undefined && product.rating > 0 && (
-                            <View style={styles.ratingContainer}>
-                                <Ionicons name="star" size={14} color="#F59E0B" />
-                                <Text style={styles.ratingText}>{product.rating}</Text>
-                            </View>
-                        )}
-                        <Text style={styles.categoryTag}>{product.category_name || 'Uncategorized'}</Text>
-                        {product.delivery && (
-                            <View style={styles.deliveryBadge}>
-                                <Ionicons name="bicycle-outline" size={12} color="#10B981" />
-                                <Text style={styles.deliveryText}>Delivery-{product.delivery}</Text>
-                            </View>
-                        )}
-                    </View>
-
-                    {/* Best For */}
-                    {product.best_for && (
-                        <Text style={styles.bestForText}>🍽️ Best for: {product.best_for}</Text>
-                    )}
-
-                    {/* Price and Toggle */}
-                    <View style={styles.productFooterRow}>
-                        <View style={styles.priceContainer}>
-                            {hasPromo ? (
-                                <>
-                                    <Text style={styles.originalPrice}>{formatPrice(product.price)} MAD</Text>
-                                    <Text style={styles.discountedPrice}>{formatPrice(discountedPrice)} MAD</Text>
-                                </>
-                            ) : (
-                                <Text style={styles.productPrice}>{formatPrice(product.price)} MAD</Text>
-                            )}
-                        </View>
-
-                        <View style={styles.toggleContainer}>
-                            <Text style={[
-                                styles.toggleLabel,
-                                product.active ? styles.toggleLabelActive : styles.toggleLabelInactive
-                            ]}>
-                                {product.active ? 'Active' : 'Off'}
-                            </Text>
-                            <Switch
-                                value={Boolean(product.active)}
-                                onValueChange={() => availabilityToggle(product.id, Boolean(product.active))}
-                                trackColor={{ false: '#E0E0E0', true: '#10B981' }}
-                                thumbColor="#FFFFFF"
-                                ios_backgroundColor="#E0E0E0"
-                                style={styles.productSwitch}
+                <View style={[styles.productInner, rtlRow]}>
+                    {/* Image */}
+                    <View style={styles.productThumb}>
+                        {imageUrl ? (
+                            <Image
+                                source={{ uri: imageUrl.replace(/\\/g, '/') }}
+                                style={styles.productThumbImage}
+                                resizeMode="cover"
                             />
+                        ) : (
+                            <View style={styles.productThumbPlaceholder}>
+                                <Ionicons name="fast-food-outline" size={26} color="#94A3B8" />
+                            </View>
+                        )}
+                        {!product.active && (
+                            <View style={styles.inactiveOverlay}>
+                                <Text style={styles.inactiveOverlayTextSm}>{TC.inactive}</Text>
+                            </View>
+                        )}
+                        {hasPromo && (
+                            <View style={styles.promoPill}>
+                                <Text style={styles.promoPillText}>-{product.promoValue}%</Text>
+                            </View>
+                        )}
+                        {product.is_popular && (
+                            <View style={styles.popularPill}>
+                                <Text style={styles.popularPillText}>⭐</Text>
+                            </View>
+                        )}
+                    </View>
+
+                    {/* Details */}
+                    <View style={[styles.productBody, rtlMargin(12)]}>
+                        {/* Name */}
+                        <Text style={[styles.productName, isRTL && styles.rtlText]} numberOfLines={1}>
+                            {product.name}
+                        </Text>
+
+                        {/* Category */}
+                        <View style={[styles.categoryTagRow, rtlRow]}>
+                            <View style={styles.categoryTagChip}>
+                                <Text style={styles.categoryTagText} numberOfLines={1}>
+                                    {product.category_name || TP.uncategorized}
+                                </Text>
+                            </View>
+                            {product.badge ? (
+                                <View style={[styles.badgeChip, rtlMargin(6)]}>
+                                    <Text style={styles.badgeChipText}>{product.badge}</Text>
+                                </View>
+                            ) : null}
+                        </View>
+
+                        {/* Price row */}
+                        <View style={[styles.priceToggleRow, rtlRow]}>
+                            <View style={[styles.priceBlock, rtlRow]}>
+                                {hasPromo ? (
+                                    <>
+                                        <Text style={styles.originalPrice}>
+                                            {formatPrice(product.price)}
+                                        </Text>
+                                        <Text style={[styles.discountedPrice, rtlMargin(6)]}>
+                                            {formatPromoPrice(product.price, product.promoValue!)} {TC.currency}
+                                        </Text>
+                                    </>
+                                ) : (
+                                    <Text style={styles.regularPrice}>
+                                        {formatPrice(product.price)} {TC.currency}
+                                    </Text>
+                                )}
+                            </View>
+
+                            <View style={[styles.toggleBlock, rtlRow]}>
+                                <Text style={[
+                                    styles.toggleLabel,
+                                    product.active ? styles.toggleOn : styles.toggleOff,
+                                ]}>
+                                    {product.active ? TC.active : TC.off}
+                                </Text>
+                                <Switch
+                                    value={Boolean(product.active)}
+                                    onValueChange={() => availabilityToggle(product.id, Boolean(product.active))}
+                                    trackColor={{ false: '#E2E8F0', true: '#86EFAC' }}
+                                    thumbColor={product.active ? '#16A34A' : '#CBD5E1'}
+                                    ios_backgroundColor="#E2E8F0"
+                                    style={styles.switchScale}
+                                />
+                            </View>
                         </View>
                     </View>
                 </View>
@@ -494,85 +416,133 @@ export default function AdminProducts() {
         );
     };
 
+    const renderItem = React.useCallback(
+        ({ item }: { item: any }) =>
+            selectedTab === 'categories' ? renderCategoryCard(item) : renderProductCard(item),
+        [selectedTab, isRTL, language]
+    );
+
+    // ── Loading screen ─────────────────────────────────────────────────────────
+
     if (loading && !refreshing) {
         return (
             <View style={styles.container}>
                 <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#2196F3" />
-                    <Text style={styles.loadingText}>Loading...</Text>
+                    <ActivityIndicator size="large" color="#6366F1" />
+                    <Text style={styles.loadingText}>{TP.loading}</Text>
                 </View>
             </View>
         );
     }
 
-    return (
-        <View style={[styles.container]}>
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>Products & Categories</Text>
-                <Text style={styles.headerSubtitle}>Manage your menu</Text>
-            </View>
+    // ── Render ────────────────────────────────────────────────────────────────
 
-            <View style={styles.tabContainer}>
+    const currentData = selectedTab === 'categories' ? filteredCategories : filteredProducts;
+    const totalCount = selectedTab === 'categories' ? categories.length : products.length;
+    const emptyText = selectedTab === 'categories' ? TP.noCategories : TP.noProducts;
+
+    return (
+        <View style={styles.container}>
+
+            {/* ── Tab Bar ── */}
+            <View style={[styles.tabBar, rtlRow]}>
                 <TouchableOpacity
                     style={[styles.tab, selectedTab === 'products' && styles.tabActive]}
                     onPress={() => setSelectedTab('products')}
+                    activeOpacity={0.75}
                 >
                     <Ionicons
                         name="fast-food-outline"
-                        size={20}
-                        color={selectedTab === 'products' ? '#2196F3' : '#666'}
+                        size={18}
+                        color={selectedTab === 'products' ? '#6366F1' : '#94A3B8'}
                     />
-                    <Text
-                        style={[styles.tabText, selectedTab === 'products' && styles.tabTextActive]}
-                    >
-                        {`Products (${products.length})`}
+                    <Text style={[styles.tabLabel, selectedTab === 'products' && styles.tabLabelActive]}>
+                        {TP.tabProducts}
+                        <Text style={styles.tabCount}> ({products.length})</Text>
                     </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                     style={[styles.tab, selectedTab === 'categories' && styles.tabActive]}
                     onPress={() => setSelectedTab('categories')}
+                    activeOpacity={0.75}
                 >
                     <Ionicons
                         name="grid-outline"
-                        size={20}
-                        color={selectedTab === 'categories' ? '#2196F3' : '#666'}
+                        size={18}
+                        color={selectedTab === 'categories' ? '#6366F1' : '#94A3B8'}
                     />
-                    <Text
-                        style={[
-                            styles.tabText,
-                            selectedTab === 'categories' && styles.tabTextActive,
-                        ]}
-                    >
-                        {`Categories (${categories.length})`}
+                    <Text style={[styles.tabLabel, selectedTab === 'categories' && styles.tabLabelActive]}>
+                        {TP.tabCategories}
+                        <Text style={styles.tabCount}> ({categories.length})</Text>
                     </Text>
                 </TouchableOpacity>
             </View>
 
-            <View style={{ flex: 1 }}>
-                <FlashList
-                    data={selectedTab === 'categories' ? categories : products}
-                    renderItem={renderItem}
-                    keyExtractor={(item) => `${selectedTab}-${item.id}`}
-                    contentContainerStyle={{ padding: 16 }}
-                    refreshControl={
-                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            {/* ── Search Bar ── */}
+            <View style={[styles.searchWrapper, rtlRow]}>
+                <Ionicons name="search-outline" size={18} color="#94A3B8" style={isRTL ? styles.searchIconRTL : styles.searchIconLTR} />
+                <TextInput
+                    style={[styles.searchInput, isRTL && styles.rtlText]}
+                    placeholder={
+                        selectedTab === 'products'
+                            ? (isRTL ? 'ابحث عن منتج...' : 'Search products...')
+                            : (isRTL ? 'ابحث عن فئة...' : 'Search categories...')
                     }
-                    ListEmptyComponent={
-                        <View style={styles.emptyContainer}>
-                            <Ionicons 
-                                name={selectedTab === 'categories' ? "grid-outline" : "fast-food-outline"} 
-                                size={64} 
-                                color="#ccc" 
-                            />
-                            <Text style={styles.emptyText}>No {selectedTab} found</Text>
-                        </View>
-                    }
+                    placeholderTextColor="#CBD5E1"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    textAlign={isRTL ? 'right' : 'left'}
+                    returnKeyType="search"
                 />
+                {searchQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setSearchQuery('')} style={isRTL ? styles.clearBtnRTL : styles.clearBtnLTR}>
+                        <Ionicons name="close-circle" size={18} color="#CBD5E1" />
+                    </TouchableOpacity>
+                )}
             </View>
+
+            {/* ── Result count ── */}
+            {searchQuery.trim().length > 0 && (
+                <View style={[styles.resultCount, rtlRow]}>
+                    <Text style={[styles.resultCountText, isRTL && styles.rtlText]}>
+                        {currentData.length}
+                        {isRTL ? ' من ' : ' of '}
+                        {totalCount}
+                        {isRTL ? ' نتيجة' : ' results'}
+                    </Text>
+                </View>
+            )}
+
+            {/* ── List ── */}
+            <FlashList
+                data={currentData}
+                renderItem={renderItem}
+                keyExtractor={(item) => `${selectedTab}-${item.id}`}
+                contentContainerStyle={styles.listContent}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        tintColor="#6366F1"
+                    />
+                }
+                ListEmptyComponent={
+                    <View style={styles.emptyContainer}>
+                        <Ionicons
+                            name={selectedTab === 'categories' ? 'grid-outline' : 'fast-food-outline'}
+                            size={52}
+                            color="#E2E8F0"
+                        />
+                        <Text style={styles.emptyText}>{emptyText}</Text>
+                    </View>
+                }
+            />
         </View>
     );
 }
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
     container: {
@@ -586,433 +556,351 @@ const styles = StyleSheet.create({
     },
     loadingText: {
         marginTop: 10,
-        fontSize: 16,
-        color: '#64748B',
+        fontSize: 15,
+        color: '#94A3B8',
     },
-    header: {
-        backgroundColor: '#FFFFFF',
-        padding: 20,
-        borderBottomWidth: 1,
-        borderBottomColor: '#E2E8F0',
-    },
-    headerTitle: {
-        fontSize: 26,
-        fontWeight: '700',
-        color: '#1E293B',
-    },
-    headerSubtitle: {
-        fontSize: 14,
-        color: '#64748B',
-        marginTop: 4,
-    },
-    tabContainer: {
+
+    // ── Tab bar ──────────────────────────────────────────────────────────────
+    tabBar: {
         flexDirection: 'row',
         backgroundColor: '#FFFFFF',
         borderBottomWidth: 1,
-        borderBottomColor: '#E2E8F0',
+        borderBottomColor: '#F1F5F9',
     },
     tab: {
         flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 16,
-        gap: 8,
+        paddingVertical: 14,
+        gap: 6,
+        borderBottomWidth: 2.5,
+        borderBottomColor: 'transparent',
     },
     tabActive: {
-        borderBottomWidth: 3,
         borderBottomColor: '#6366F1',
     },
-    tabText: {
-        fontSize: 15,
-        color: '#64748B',
+    tabLabel: {
+        fontSize: 14,
         fontWeight: '500',
+        color: '#94A3B8',
     },
-    tabTextActive: {
+    tabLabelActive: {
         color: '#6366F1',
         fontWeight: '700',
     },
-    content: {
-        flex: 1,
-        padding: 16,
+    tabCount: {
+        fontWeight: '400',
+        fontSize: 13,
     },
 
-    // Category Card Styles
-    categoryCard: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 16,
-        marginBottom: 12,
-        overflow: 'hidden',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
-        elevation: 3,
-    },
-    categoryImageContainer: {
-        width: '100%',
-        height: 120,
-        backgroundColor: '#F1F5F9',
-        position: 'relative',
-    },
-    categoryImage: {
-        width: '100%',
-        height: '100%',
-    },
-    categoryImagePlaceholder: {
-        width: '100%',
-        height: '100%',
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#F1F5F9',
-    },
-    categoryInfo: {
-        padding: 16,
-    },
-    categoryHeader: {
+    // ── Search bar ───────────────────────────────────────────────────────────
+    searchWrapper: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 6,
+        backgroundColor: '#FFFFFF',
+        marginHorizontal: 14,
+        marginTop: 12,
+        marginBottom: 4,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        paddingHorizontal: 12,
+        height: 44,
     },
-    categoryName: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#1E293B',
-        flex: 1,
+    searchIconLTR: {
+        marginRight: 8,
     },
-    statusDot: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
+    searchIconRTL: {
         marginLeft: 8,
     },
-    statusDotActive: {
-        backgroundColor: '#10B981',
-    },
-    statusDotInactive: {
-        backgroundColor: '#EF4444',
-    },
-    categoryDescription: {
+    searchInput: {
+        flex: 1,
         fontSize: 14,
-        color: '#64748B',
-        lineHeight: 20,
-        marginBottom: 12,
+        color: '#1E293B',
+        paddingVertical: 0,
     },
-    categoryFooter: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+    clearBtnLTR: {
+        marginLeft: 6,
     },
-    categoryDate: {
+    clearBtnRTL: {
+        marginRight: 6,
+    },
+
+    // ── Result count ─────────────────────────────────────────────────────────
+    resultCount: {
+        paddingHorizontal: 16,
+        paddingBottom: 4,
+    },
+    resultCountText: {
         fontSize: 12,
         color: '#94A3B8',
     },
-    categorySwitch: {
-        transform: [{ scaleX: 0.9 }, { scaleY: 0.9 }],
+
+    // ── List ─────────────────────────────────────────────────────────────────
+    listContent: {
+        padding: 14,
+        paddingTop: 10,
     },
 
-    // Product Card Styles
-    productCard: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 16,
-        marginBottom: 16,
-        overflow: 'hidden',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
-        elevation: 3,
-    },
-    productImageContainer: {
-        width: '100%',
-        height: 180,
-        backgroundColor: '#F1F5F9',
-        position: 'relative',
-    },
-    productImage: {
-        width: '100%',
-        height: '100%',
-    },
-    productImagePlaceholder: {
-        width: '100%',
-        height: '100%',
-        justifyContent: 'center',
+    // ── Empty state ───────────────────────────────────────────────────────────
+    emptyContainer: {
         alignItems: 'center',
-        backgroundColor: '#F1F5F9',
+        paddingVertical: 60,
+        gap: 12,
     },
-    badgesContainer: {
-        position: 'absolute',
-        top: 12,
-        left: 12,
-        flexDirection: 'row',
-        gap: 8,
+    emptyText: {
+        fontSize: 15,
+        color: '#CBD5E1',
     },
-    promoBadge: {
-        backgroundColor: '#EF4444',
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 8,
-    },
-    promoBadgeText: {
-        color: '#FFFFFF',
-        fontSize: 12,
-        fontWeight: '700',
-    },
-    customBadge: {
-        backgroundColor: '#6366F1',
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 8,
-    },
-    customBadgeText: {
-        color: '#FFFFFF',
-        fontSize: 12,
-        fontWeight: '600',
-    },
+
+    // ── Shared overlay ────────────────────────────────────────────────────────
     inactiveOverlay: {
         position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.5)',
+        inset: 0,
+        backgroundColor: 'rgba(0,0,0,0.45)',
         justifyContent: 'center',
         alignItems: 'center',
     },
     inactiveOverlayText: {
-        color: '#FFFFFF',
-        fontSize: 16,
+        color: '#FFF',
+        fontSize: 11,
         fontWeight: '700',
     },
-    productInfo: {
-        padding: 16,
+    inactiveOverlayTextSm: {
+        color: '#FFF',
+        fontSize: 9,
+        fontWeight: '700',
     },
-    productNameRow: {
+
+    // ── Switch ────────────────────────────────────────────────────────────────
+    switchScale: {
+        transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }],
+    },
+
+    // ── Status dot ───────────────────────────────────────────────────────────
+    statusDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        marginRight: 6,
+        flexShrink: 0,
+    },
+    dotActive: {
+        backgroundColor: '#16A34A',
+    },
+    dotInactive: {
+        backgroundColor: '#EF4444',
+    },
+
+    // ── Category card ─────────────────────────────────────────────────────────
+    categoryCard: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 14,
+        marginBottom: 10,
+        flexDirection: 'row',
+        alignItems: 'stretch',   // children stretch to card height
+        overflow: 'hidden',
+        shadowColor: '#94A3B8',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.08,
+        shadowRadius: 4,
+        elevation: 2,
+        minHeight: 72,
+    },
+    categoryThumb: {
+        width: 72,
+        alignSelf: 'stretch',
+        position: 'relative',
+        flexShrink: 0,
+    },
+    categoryThumbImage: {
+        width: '100%',
+        height: '100%',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        bottom: 0,
+        right: 0,
+    },
+    categoryThumbPlaceholder: {
+        flex: 1,
+        backgroundColor: '#F1F5F9',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    categoryBody: {
+        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
     },
-    productName: {
-        fontSize: 18,
+    nameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 4,
+    },
+    categoryName: {
+        fontSize: 15,
         fontWeight: '700',
         color: '#1E293B',
         flex: 1,
     },
-    popularBadge: {
-        backgroundColor: '#FEF3C7',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 8,
-        marginLeft: 8,
-    },
-    popularText: {
+    categoryDesc: {
         fontSize: 12,
+        color: '#94A3B8',
+        lineHeight: 16,
     },
-    productDescription: {
-        fontSize: 14,
-        color: '#64748B',
-        lineHeight: 20,
+
+    // ── Product card ──────────────────────────────────────────────────────────
+    productCard: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 14,
         marginBottom: 10,
+        overflow: 'hidden',
+        shadowColor: '#94A3B8',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.08,
+        shadowRadius: 4,
+        elevation: 2,
     },
-    productMetaRow: {
+    productInner: {
+        flexDirection: 'row',
+        alignItems: 'stretch',
+    },
+    productThumb: {
+        width: 90,
+        alignSelf: 'stretch',   // fills card height so no white gap
+        position: 'relative',
+        flexShrink: 0,
+    },
+    productThumbImage: {
+        width: '100%',
+        height: '100%',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        bottom: 0,
+        right: 0,
+    },
+    productThumbPlaceholder: {
+        flex: 1,
+        backgroundColor: '#F1F5F9',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    promoPill: {
+        position: 'absolute',
+        top: 5,
+        left: 5,
+        backgroundColor: '#EF4444',
+        paddingHorizontal: 5,
+        paddingVertical: 2,
+        borderRadius: 5,
+    },
+    promoPillText: {
+        color: '#FFF',
+        fontSize: 9,
+        fontWeight: '700',
+    },
+    popularPill: {
+        position: 'absolute',
+        bottom: 5,
+        left: 5,
+        backgroundColor: 'rgba(0,0,0,0.35)',
+        paddingHorizontal: 4,
+        paddingVertical: 2,
+        borderRadius: 5,
+    },
+    popularPillText: {
+        fontSize: 10,
+    },
+    productBody: {
+        flex: 1,
+        paddingVertical: 12,
+        paddingRight: 12,
+    },
+    productName: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#1E293B',
+        marginBottom: 5,
+    },
+    categoryTagRow: {
         flexDirection: 'row',
         alignItems: 'center',
         flexWrap: 'wrap',
-        gap: 8,
         marginBottom: 8,
+        gap: 5,
     },
-    ratingContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#FEF3C7',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 6,
-        gap: 4,
-    },
-    ratingText: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: '#92400E',
-    },
-    categoryTag: {
-        fontSize: 12,
-        color: '#6366F1',
+    categoryTagChip: {
         backgroundColor: '#EEF2FF',
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 6,
-        fontWeight: '500',
-    },
-    deliveryBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#D1FAE5',
         paddingHorizontal: 8,
-        paddingVertical: 4,
+        paddingVertical: 3,
         borderRadius: 6,
-        gap: 4,
+        maxWidth: 140,
     },
-    deliveryText: {
+    categoryTagText: {
         fontSize: 11,
-        color: '#059669',
-        fontWeight: '500',
+        color: '#6366F1',
+        fontWeight: '600',
     },
-    bestForText: {
-        fontSize: 12,
-        color: '#64748B',
-        marginBottom: 12,
-        fontStyle: 'italic',
+    badgeChip: {
+        backgroundColor: '#F3E8FF',
+        paddingHorizontal: 7,
+        paddingVertical: 3,
+        borderRadius: 6,
     },
-    productFooterRow: {
+    badgeChipText: {
+        fontSize: 11,
+        color: '#9333EA',
+        fontWeight: '600',
+    },
+    priceToggleRow: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginTop: 8,
-        paddingTop: 12,
-        borderTopWidth: 1,
-        borderTopColor: '#F1F5F9',
     },
-    priceContainer: {
+    priceBlock: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-    },
-    productPrice: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: '#10B981',
+        gap: 5,
+        flex: 1,
     },
     originalPrice: {
-        fontSize: 14,
+        fontSize: 11,
         color: '#94A3B8',
         textDecorationLine: 'line-through',
     },
     discountedPrice: {
-        fontSize: 20,
+        fontSize: 15,
         fontWeight: '700',
         color: '#EF4444',
     },
-    toggleContainer: {
+    regularPrice: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#16A34A',
+    },
+    toggleBlock: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
+        gap: 4,
     },
     toggleLabel: {
-        fontSize: 12,
-        fontWeight: '600',
+        fontSize: 11,
+        fontWeight: '700',
     },
-    toggleLabelActive: {
-        color: '#10B981',
+    toggleOn: {
+        color: '#16A34A',
     },
-    toggleLabelInactive: {
+    toggleOff: {
         color: '#EF4444',
     },
-    productSwitch: {
-        transform: [{ scaleX: 0.9 }, { scaleY: 0.9 }],
-    },
 
-    // Legacy styles (keeping for compatibility)
-    switchContainer: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginLeft: 12,
-        minWidth: 60,
-    },
-    switchLabel: {
-        fontSize: 12,
-        fontWeight: '600',
-        marginBottom: 6,
-    },
-    switchLabelActive: {
-        color: '#4CAF50',
-    },
-    switchLabelInactive: {
-        color: '#F44336',
-    },
-    card: {
-        backgroundColor: 'white',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
-    },
-    cardHeader: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-    },
-    iconContainer: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: '#f0f0f0',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-    },
-    cardContent: {
-        flex: 1,
-    },
-    productHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 4,
-    },
-    cardTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: '#333',
-        flex: 1,
-    },
-    cardDescription: {
-        fontSize: 14,
-        color: '#666',
-        marginTop: 4,
-    },
-    productFooter: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginTop: 12,
-    },
-    priceText: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: '#4CAF50',
-    },
-    categoryText: {
-        fontSize: 14,
-        color: '#999',
-    },
-    availabilityToggle: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginLeft: 12,
-    },
-    availableToggle: {
-        backgroundColor: '#4CAF50',
-    },
-    unavailableToggle: {
-        backgroundColor: '#F44336',
-    },
-    emptyContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingVertical: 60,
-    },
-    emptyText: {
-        fontSize: 18,
-        color: '#999',
-        marginTop: 16,
+    // ── RTL text ──────────────────────────────────────────────────────────────
+    rtlText: {
+        textAlign: 'right',
     },
 });

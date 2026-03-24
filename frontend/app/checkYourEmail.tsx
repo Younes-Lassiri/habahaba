@@ -1,3 +1,4 @@
+import Colors from "@/constants/Colors";
 import { useAuth } from "@/contexts/AuthContext";
 import { registerForPushNotificationsAsync } from "@/utils/notifications";
 import { Ionicons } from '@expo/vector-icons';
@@ -173,7 +174,20 @@ const EnterCodeResetPassword = () => {
   return (
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
-
+      {/* ✅ This fills the status bar area on iOS with your primary color */}
+                    {Platform.OS === 'ios' && (
+                      <View
+                        style={{
+                          height: insets.top,
+                          backgroundColor: Colors.primary,
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          zIndex: 999,
+                        }}
+                      />
+                    )}
       {/* Top right language icon */}
       <View style={[s.topRightButtons, { top: Platform.OS === 'ios' ? 54 : 50 }]}>
         <TouchableOpacity
@@ -396,65 +410,56 @@ const EnterCodeResetPassword = () => {
 
       {/* Language Selection Modal – header reversed in RTL */}
       <Modal
-        visible={showLanguageModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowLanguageModal(false)}
-      >
-        <View style={s.modalOverlay}>
-          <View style={s.modalContent}>
-            <View style={[s.modalHeader, isRTL && s.modalHeaderRTL]}>
-              {isRTL ? (
-                <>
-                  <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
-                    <Ionicons name="close" size={24} color={C.text} />
-                  </TouchableOpacity>
-                  <Text style={[s.modalTitle, s.textRTL]}>{t(translations.selectLanguage)}</Text>
-                </>
-              ) : (
-                <>
-                  <Text style={s.modalTitle}>{t(translations.selectLanguage)}</Text>
-                  <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
-                    <Ionicons name="close" size={24} color={C.text} />
-                  </TouchableOpacity>
-                </>
+  visible={showLanguageModal}
+  transparent
+  animationType="slide"
+  onRequestClose={() => setShowLanguageModal(false)}
+>
+  <View style={s.modalOverlay}>
+    <View style={[s.modalContent, { paddingBottom: insets.bottom + 20 }]}>
+      <View style={[s.modalHeader, isRTL && s.modalHeaderRTL]}>
+        {isRTL ? (
+          <>
+            <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
+              <Ionicons name="close" size={24} color={C.text} />
+            </TouchableOpacity>
+            <Text style={[s.modalTitle, s.textRTL]}>{t(translations.selectLanguage)}</Text>
+          </>
+        ) : (
+          <>
+            <Text style={s.modalTitle}>{t(translations.selectLanguage)}</Text>
+            <TouchableOpacity onPress={() => setShowLanguageModal(false)}>
+              <Ionicons name="close" size={24} color={C.text} />
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {languages.map((language) => {
+          const langCode = language === 'English' ? 'english' : language === 'Arabic' ? 'arabic' : 'french';
+          return (
+            <TouchableOpacity
+              key={language}
+              style={[s.modalOption, currentLanguage === langCode && s.modalOptionActive]}
+              onPress={async () => {
+                setCurrentLanguage(langCode as 'english' | 'arabic' | 'french');
+                await AsyncStorage.setItem('userLanguage', langCode);
+                setShowLanguageModal(false);
+              }}
+            >
+              <Text style={[s.modalOptionText, currentLanguage === langCode && s.modalOptionTextActive, isRTL && s.textRTL]}>
+                {language}
+              </Text>
+              {currentLanguage === langCode && (
+                <Ionicons name="checkmark" size={20} color={C.brand} />
               )}
-            </View>
-            <ScrollView>
-              {languages.map((language) => {
-                const langCode = language === 'English' ? 'english' : language === 'Arabic' ? 'arabic' : 'french';
-                return (
-                  <TouchableOpacity
-                    key={language}
-                    style={[
-                      s.modalOption,
-                      currentLanguage === langCode && s.modalOptionActive,
-                    ]}
-                    onPress={async () => {
-                      setCurrentLanguage(langCode);
-                      await AsyncStorage.setItem('userLanguage', langCode);
-                      setShowLanguageModal(false);
-                    }}
-                  >
-                    <Text
-                      style={[
-                        s.modalOptionText,
-                        currentLanguage === langCode && s.modalOptionTextActive,
-                        isRTL && s.textRTL,
-                      ]}
-                    >
-                      {language}
-                    </Text>
-                    {currentLanguage === langCode && (
-                      <Ionicons name="checkmark" size={20} color={C.brand} />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  </View>
+</Modal>
     </SafeAreaView>
   );
 };

@@ -84,6 +84,16 @@ export const calculateDeliveryFee = async (clientLat, clientLon) => {
       calculatedFee = maxFee;
     }
 
+    // New custom rounding logic
+    const integerPart = Math.floor(calculatedFee);
+    const decimalPart = calculatedFee - integerPart;
+
+    if (decimalPart > 0 && decimalPart <= 0.5) {
+      calculatedFee = integerPart + 0.5;
+    } else if (decimalPart > 0.5) {
+      calculatedFee = integerPart + 1.0;
+    }
+
     return {
       fee: Math.round(calculatedFee * 100) / 100, // Round to 2 decimal places
       distance: distance,
@@ -130,6 +140,3 @@ export const getRestaurantLocation = async () => {
     return null;
   }
 };
-
-
-
